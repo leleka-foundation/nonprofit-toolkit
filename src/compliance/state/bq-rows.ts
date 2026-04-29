@@ -19,6 +19,8 @@ import { z } from 'zod'
 import {
   EntitySchema,
   FindingSchema,
+  SourceAccessMethodSchema,
+  SourceFreshnessSchema,
   SourceKindSchema,
 } from '../types/index.ts'
 
@@ -81,6 +83,15 @@ export interface ComplianceTableDefinition {
   readonly name: string
   readonly description: string
   readonly fields: readonly TableSchemaField[]
+}
+
+/**
+ * One BigQuery view definition.
+ */
+export interface ComplianceViewDefinition {
+  readonly name: string
+  readonly description: string
+  readonly query: string
 }
 
 /**
@@ -168,11 +179,93 @@ export const COMPLIANCE_TABLES: readonly ComplianceTableDefinition[] = [
       { name: 'kind', type: 'STRING', mode: 'REQUIRED' },
       { name: 'auth_required', type: 'BOOL', mode: 'REQUIRED' },
       { name: 'description', type: 'STRING', mode: 'REQUIRED' },
+      { name: 'access_url', type: 'STRING', mode: 'NULLABLE' },
+      { name: 'access_method', type: 'STRING', mode: 'NULLABLE' },
+      { name: 'automation_allowed', type: 'BOOL', mode: 'NULLABLE' },
+      { name: 'manual_only_reason', type: 'STRING', mode: 'NULLABLE' },
+      { name: 'source_freshness', type: 'JSON', mode: 'NULLABLE' },
       { name: 'tos_url', type: 'STRING', mode: 'REQUIRED' },
       { name: 'updated_at', type: 'TIMESTAMP', mode: 'REQUIRED' },
     ],
   },
 ] as const
+
+export const CURRENT_OPEN_FINDINGS_VIEW = 'current_open_findings'
+
+/**
+ * Query for the current-open-findings view.
+ *
+ * The raw `findings` table is append-only history. This view owns the
+ * current-state contract by selecting the latest row for each semantic finding
+ * key. It deliberately does not partition by `finding_id`, because source-level
+ * findings can emit a fresh UUID on each run for the same underlying issue.
+ */
+export function currentOpenFindingsViewQuery(
+  datasetRef: string = COMPLIANCE_DATASET,
+): string {
+  const findingsTable = `\`${datasetRef}.findings\``
+  const runsTable = `\`${datasetRef}.discovery_runs\``
+  return `
+    WITH latest_runs AS (
+      SELECT source_id, status
+      FROM (
+        SELECT
+          source_id,
+          status,
+          ROW_NUMBER() OVER (
+            PARTITION BY source_id
+            ORDER BY completed_at DESC, started_at DESC, run_id DESC
+          ) AS rn
+        FROM ${runsTable}
+      )
+      WHERE rn = 1
+    ),
+    ranked_findings AS (
+      SELECT
+        f.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            jurisdiction_id,
+            source_id,
+            title,
+            detail,
+            COALESCE(TO_JSON_STRING(evidence), '')
+          ORDER BY opened_at DESC, finding_id DESC
+        ) AS rn
+      FROM ${findingsTable} f
+    )
+    SELECT
+      f.finding_id,
+      f.jurisdiction_id,
+      f.source_id,
+      f.severity,
+      f.status,
+      f.title,
+      f.detail,
+      f.evidence,
+      f.opened_at,
+      f.resolved_at
+    FROM ranked_findings f
+    LEFT JOIN latest_runs r
+      ON r.source_id = f.source_id
+    WHERE f.rn = 1
+      AND f.status = 'open'
+      AND NOT COALESCE(
+        JSON_VALUE(f.evidence, '$.code') = 'source.failed'
+          AND r.status = 'succeeded',
+        FALSE
+      )
+  `
+}
+
+export const COMPLIANCE_VIEWS: readonly ComplianceViewDefinition[] = [
+  {
+    name: CURRENT_OPEN_FINDINGS_VIEW,
+    description:
+      'Latest open compliance findings derived from append-only finding history.',
+    query: currentOpenFindingsViewQuery(),
+  },
+]
 
 /**
  * Row schema for the `entity` table — same shape as the underlying
@@ -218,14 +311,28 @@ export type ComplianceFindingRow = z.infer<typeof ComplianceFindingRowSchema>
 /**
  * Row schema for the `sources` registry-snapshot table.
  */
-export const ComplianceSourceRowSchema = z.object({
-  source_id: z.string().min(1),
-  jurisdiction_id: z.string().min(1),
-  kind: SourceKindSchema,
-  auth_required: z.boolean(),
-  description: z.string().min(1),
-  tos_url: z.string().url(),
-  updated_at: z.preprocess(extractTimestampValue, z.string().min(1)),
-})
+export const ComplianceSourceRowSchema = z
+  .object({
+    source_id: z.string().min(1),
+    jurisdiction_id: z.string().min(1),
+    kind: SourceKindSchema,
+    auth_required: z.boolean(),
+    description: z.string().min(1),
+    access_url: z.string().url(),
+    access_method: SourceAccessMethodSchema,
+    automation_allowed: z.boolean(),
+    manual_only_reason: z.string().min(1).nullable(),
+    source_freshness: SourceFreshnessSchema.nullable(),
+    tos_url: z.string().url(),
+    updated_at: z.preprocess(extractTimestampValue, z.string().min(1)),
+  })
+  .refine((row) => row.automation_allowed || row.manual_only_reason !== null, {
+    path: ['manual_only_reason'],
+    message: 'manual_only_reason is required when automation is blocked',
+  })
+  .refine((row) => !row.automation_allowed || row.manual_only_reason === null, {
+    path: ['manual_only_reason'],
+    message: 'manual_only_reason must be null when automation is allowed',
+  })
 
 export type ComplianceSourceRow = z.infer<typeof ComplianceSourceRowSchema>

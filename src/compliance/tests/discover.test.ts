@@ -11,11 +11,13 @@ import { z } from 'zod'
 import type { JurisdictionRegistry } from '../registry/jurisdiction-registry.ts'
 import { runDiscovery } from '../skills/discover.ts'
 import type { ComplianceMigrationPort } from '../skills/migrate.ts'
+import type { DownloadCacheStore } from '../sources/download-cache.ts'
 import type { RunRecorder } from '../sources/runner.ts'
 import type { EntityAccessor } from '../state/bq-entity.ts'
 import type { EntityIdsAccessor } from '../state/secret-manager.ts'
 import type {
   Entity,
+  EntityIdentifiers,
   FetchImpl,
   Finding,
   Jurisdiction,
@@ -38,6 +40,11 @@ const ENTITY: Entity = {
   updated_at: '2024-05-01T00:00:00Z',
 }
 
+const IDENTIFIERS: EntityIdentifiers = {
+  'us-federal': { ein: '12-3456789' },
+  'us-ca': { sosEntityNumber: 'C0123456' },
+}
+
 function fakeEntityAccessor(entity: Entity | null): EntityAccessor {
   return {
     readEntity: vi.fn<EntityAccessor['readEntity']>(() => okAsync(entity)),
@@ -48,10 +55,7 @@ function fakeEntityAccessor(entity: Entity | null): EntityAccessor {
 }
 
 function fakeIdsAccessor(
-  identifiers: {
-    'us-federal'?: { ein: string }
-    'us-ca'?: { sosEntityNumber: string }
-  } | null,
+  identifiers: EntityIdentifiers | null,
 ): EntityIdsAccessor {
   return {
     read: vi.fn<EntityIdsAccessor['read']>(() => okAsync(identifiers)),
@@ -87,6 +91,15 @@ function fakeMigrationPort(
     ),
     createTable: vi.fn<ComplianceMigrationPort['createTable']>(() =>
       okAsync(undefined),
+    ),
+    createOrReplaceView: vi.fn<ComplianceMigrationPort['createOrReplaceView']>(
+      () => okAsync(undefined),
+    ),
+    addTableColumn: vi.fn<ComplianceMigrationPort['addTableColumn']>(() =>
+      okAsync(undefined),
+    ),
+    tableColumnExists: vi.fn<ComplianceMigrationPort['tableColumnExists']>(() =>
+      okAsync(false),
     ),
     ...overrides,
   }
@@ -126,6 +139,9 @@ function makeSource(args: MakeSourceArgs): Source {
     kind: 'api',
     authRequired: false,
     description: 'fake',
+    accessUrl: 'https://example.com/source',
+    accessMethod: 'official_api',
+    automationAllowed: true,
     tosUrl: 'https://example.com/tos',
     run: vi.fn<Source['run']>(() => {
       if (args.fail === true) {
@@ -170,9 +186,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([sourceA, sourceB])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date('2024-05-01T00:00:00Z'),
@@ -188,14 +202,39 @@ describe('runDiscovery', () => {
     expect(sourceB.run).toHaveBeenCalledTimes(1)
   })
 
+  it('passes an injected download cache into source context', async () => {
+    const source = makeSource({ id: 'a' })
+    const downloadCache: DownloadCacheStore = {
+      read: vi.fn<DownloadCacheStore['read']>(),
+      write: vi.fn<DownloadCacheStore['write']>(),
+    }
+
+    const result = await runDiscovery({
+      registry: fakeRegistry([makeJurisdiction([source])]),
+      entityAccessor: fakeEntityAccessor(ENTITY),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
+      recorder: fakeRecorder(),
+      migrationPort: fakeMigrationPort(),
+      now: () => new Date('2024-05-01T00:00:00Z'),
+      fetch: vi.fn<FetchImpl>(() =>
+        Promise.resolve(new Response('', { status: 200 })),
+      ),
+      downloadCache,
+    })
+
+    expect(result.isOk()).toBe(true)
+    expect(source.run).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(source.run).mock.calls[0]?.[1].downloadCache).toBe(
+      downloadCache,
+    )
+  })
+
   it('returns a configuration error when the entity has not been onboarded', async () => {
     const source = makeSource({ id: 'a' })
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(null),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date(),
@@ -240,9 +279,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([sourceA, sourceB])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date('2024-05-01T00:00:00Z'),
@@ -253,11 +290,67 @@ describe('runDiscovery', () => {
 
     expect(result.isOk()).toBe(true)
     if (!result.isOk()) return
-    const successes = result.value.runs.filter((r) => r.outcome === 'ok')
-    const failures = result.value.runs.filter((r) => r.outcome === 'err')
+    const successes = result.value.runs.filter(
+      (r) => r.outcome.status === 'success',
+    )
+    const failures = result.value.runs.filter(
+      (r) => r.outcome.status === 'source_failure',
+    )
     expect(successes).toHaveLength(1)
     expect(failures).toHaveLength(1)
     expect(failures[0]?.sourceId).toBe('b')
+  })
+
+  it('maps runner-level errors into source-failure outcomes and continues the report', async () => {
+    const source: Source = {
+      id: 'a',
+      jurisdiction: 'us-federal',
+      kind: 'api',
+      authRequired: false,
+      description: 'policy blocked',
+      accessUrl: 'https://example.com/source',
+      accessMethod: 'manual',
+      automationAllowed: false,
+      manualOnlyReason: 'No permitted automated access path was found.',
+      manualInstructions: [],
+      manualEvidenceFields: [],
+      tosUrl: 'https://example.com/tos',
+      run: vi.fn<Source['run']>(() =>
+        errAsync({ type: 'internal', message: 'should not run' }),
+      ),
+    }
+    const recorder: RunRecorder = {
+      recordRun: vi.fn<RunRecorder['recordRun']>(() =>
+        errAsync({ type: 'recorder', message: 'BQ unavailable' }),
+      ),
+      recordFindings: vi.fn<RunRecorder['recordFindings']>(() =>
+        okAsync(undefined),
+      ),
+    }
+
+    const result = await runDiscovery({
+      registry: fakeRegistry([makeJurisdiction([source])]),
+      entityAccessor: fakeEntityAccessor(ENTITY),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
+      recorder,
+      migrationPort: fakeMigrationPort(),
+      now: () => new Date('2024-05-01T00:00:00Z'),
+      fetch: vi.fn<FetchImpl>(() =>
+        Promise.resolve(new Response('', { status: 200 })),
+      ),
+    })
+
+    expect(result.isOk()).toBe(true)
+    if (!result.isOk()) return
+    expect(result.value.runs[0]?.outcome).toMatchObject({
+      status: 'source_failure',
+      source_id: 'a',
+      error_type: 'internal',
+    })
+    expect(result.value.findings[0]).toMatchObject({
+      source_id: 'a',
+      evidence: { code: 'source.failed', errorType: 'internal' },
+    })
   })
 
   it('aggregates findings across all sources', async () => {
@@ -273,9 +366,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([sourceA, sourceB])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date('2024-05-01T00:00:00Z'),
@@ -289,6 +380,33 @@ describe('runDiscovery', () => {
     expect(result.value.findings.map((f) => f.title)).toEqual(['one', 'two'])
   })
 
+  it('returns a persist error when derived findings cannot be stored', async () => {
+    const source = makeSource({ id: 'a', fail: true })
+    const recorder: RunRecorder = {
+      recordRun: vi.fn<RunRecorder['recordRun']>(() => okAsync(undefined)),
+      recordFindings: vi.fn<RunRecorder['recordFindings']>(() =>
+        errAsync({ type: 'recorder', message: 'findings table down' }),
+      ),
+    }
+
+    const result = await runDiscovery({
+      registry: fakeRegistry([makeJurisdiction([source])]),
+      entityAccessor: fakeEntityAccessor(ENTITY),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
+      recorder,
+      migrationPort: fakeMigrationPort(),
+      now: () => new Date('2024-05-01T00:00:00Z'),
+      fetch: vi.fn<FetchImpl>(() =>
+        Promise.resolve(new Response('', { status: 200 })),
+      ),
+    })
+
+    expect(result.isErr()).toBe(true)
+    if (!result.isErr()) return
+    expect(result.error.type).toBe('persist')
+    expect(result.error.message).toContain('findings table down')
+  })
+
   it('passes identifiers + fetch + now into each source context', async () => {
     const source = makeSource({ id: 'a' })
     const fetchFn = vi.fn<FetchImpl>(() =>
@@ -299,9 +417,7 @@ describe('runDiscovery', () => {
     await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => fixedNow,
@@ -310,7 +426,7 @@ describe('runDiscovery', () => {
 
     const [entity, ctx] = vi.mocked(source.run).mock.calls[0] ?? []
     expect(entity).toBe(ENTITY)
-    expect(ctx?.identifiers).toEqual({ 'us-federal': { ein: '12-3456789' } })
+    expect(ctx?.identifiers).toEqual(IDENTIFIERS)
     expect(ctx?.fetch).toBe(fetchFn)
     expect(ctx?.now()).toEqual(fixedNow)
   })
@@ -327,9 +443,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([])]),
       entityAccessor: accessor,
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date(),
@@ -375,9 +489,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: fakeMigrationPort(),
       now: () => new Date(),
@@ -390,6 +502,70 @@ describe('runDiscovery', () => {
     if (!result.isOk()) return
     expect(result.value.runs).toEqual([])
     expect(result.value.findings).toEqual([])
+  })
+
+  it('reports manual-required sources and persists their derived finding', async () => {
+    const manualSource: Source = {
+      id: 'ca-sos-bizfile',
+      jurisdiction: 'us-ca',
+      kind: 'manual',
+      authRequired: false,
+      description: 'CA SOS bizfile',
+      accessUrl: 'https://bizfileonline.sos.ca.gov/search/business',
+      accessMethod: 'manual',
+      automationAllowed: false,
+      manualOnlyReason:
+        'CA SOS bizfile terms prohibit automated collection by robots or spiders.',
+      manualInstructions: ['Open bizfile and record the entity status.'],
+      manualEvidenceFields: [
+        { key: 'entity_status', label: 'Entity status', required: true },
+      ],
+      tosUrl:
+        'https://www.sos.ca.gov/business-programs/bizfile/privacy-warning-terms-and-conditions-use',
+      run: vi.fn<Source['run']>(() =>
+        errAsync({ type: 'tos', message: 'should not run' }),
+      ),
+    }
+    const recorder = fakeRecorder()
+
+    const result = await runDiscovery({
+      registry: fakeRegistry([
+        {
+          id: 'us-ca',
+          entityIdSchema: z.object({}),
+          sources: [manualSource],
+          deadlineRules: [],
+          forms: [],
+        },
+      ]),
+      entityAccessor: fakeEntityAccessor(ENTITY),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
+      recorder,
+      migrationPort: fakeMigrationPort(),
+      now: () => new Date('2026-04-28T12:00:00.000Z'),
+      fetch: vi.fn<FetchImpl>(() =>
+        Promise.resolve(new Response('', { status: 200 })),
+      ),
+    })
+
+    expect(result.isOk()).toBe(true)
+    if (!result.isOk()) return
+    expect(manualSource.run).not.toHaveBeenCalled()
+    expect(result.value.runs[0]?.outcome.status).toBe('manual_required')
+    expect(result.value.runs[0]).toMatchObject({
+      accessUrl: 'https://bizfileonline.sos.ca.gov/search/business',
+      manualOnlyReason:
+        'CA SOS bizfile terms prohibit automated collection by robots or spiders.',
+      tosUrl:
+        'https://www.sos.ca.gov/business-programs/bizfile/privacy-warning-terms-and-conditions-use',
+    })
+    expect(result.value.findings).toHaveLength(1)
+    expect(result.value.findings[0]).toMatchObject({
+      source_id: 'ca-sos-bizfile',
+      severity: 'warn',
+      title: 'Manual verification required: CA SOS bizfile',
+    })
+    expect(recorder.recordFindings).toHaveBeenCalledTimes(1)
   })
 
   it('runs the schema migration before any sources execute', async () => {
@@ -406,9 +582,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: port,
       now: () => new Date('2024-05-01T00:00:00Z'),
@@ -436,9 +610,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: port,
       now: () => new Date('2024-05-01T00:00:00Z'),
@@ -463,9 +635,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: port,
       now: () => new Date(),
@@ -489,9 +659,7 @@ describe('runDiscovery', () => {
     const result = await runDiscovery({
       registry: fakeRegistry([makeJurisdiction([source])]),
       entityAccessor: fakeEntityAccessor(ENTITY),
-      identifiersAccessor: fakeIdsAccessor({
-        'us-federal': { ein: '12-3456789' },
-      }),
+      identifiersAccessor: fakeIdsAccessor(IDENTIFIERS),
       recorder: fakeRecorder(),
       migrationPort: port,
       now: () => new Date('2024-05-01T00:00:00Z'),

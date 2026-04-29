@@ -82,84 +82,273 @@ This is the working checklist used by the implementation subagent for each phase
 
 ---
 
-## Phase 2 — Public-source discovery (CA + IRS BMF) — STUB
+## Phase 2 — Public-source discovery (CA + IRS BMF) — IMPLEMENTED
 
-Detailed checklist will be drafted at the start of Phase 2 by the Phase 2 implementation
-subagent and reviewed by the user before work begins. The skeleton below carries forward
-follow-ups from Phase 1 and the high-level scope from the PLAN.
+Phase 2 adds public-source discovery for IRS EO BMF and California, typed source
+outcomes, bounded download evidence/cache support, a findings/gap engine, upgraded
+`compliance-discover` reporting, and a read-only `compliance-status` skill. Source
+review was refreshed on 2026-04-28; CA SOS and CA FTB remain manual-required because
+the current public surfaces do not provide a confidently permitted automated path.
 
 ### Phase 1 follow-ups to pick up
 
-- [ ] Manual verification of `compliance-onboard`, `compliance-discover`, and the
-      migration script against a real GCP project (was deferred from Phase 1 for lack
-      of credentials in the implementation VM).
-- [ ] The IRS TEOS source downloads the full Pub. 78 (~30 MB) and Auto-Revocation
-      (~larger) zip files on every run. Phase 1 considers this acceptable for a
-      single-tenant, daily-cadence flow but Phase 2 should add a local cache (last
-      modified / etag check) before adding more bulk-download sources.
-- [ ] `EntityIdentifiers` includes `us-ca` keys; Phase 1 only persists them, Phase 2
-      consumes them in CA sources.
+- [x] Manual verification of `compliance-onboard`, `compliance-discover`, and the
+      migration script against a real GCP project.
+- [x] Confirm the user's existing onboarded entity IDs and attributes can be read from
+      Secret Manager and BigQuery before running any live discovery.
+- [x] Add shared download/cache support before adding IRS BMF or CA AG CSV downloads.
+      Phase 1 downloads the full IRS Pub. 78 and Auto-Revocation files on every run;
+      Phase 2 should stop repeating identical bulk downloads.
+- [x] Consume the existing `us-ca` keys in `EntityIdentifiers` rather than inventing a
+      second California identifier shape.
 
 ### Pre-flight
 
-- [ ] Read `CLAUDE.md`, every file in `.claude/rules/`, `docs/compliance/PLAN.md`, and
+- [x] Read `CLAUDE.md`, every file in `.claude/rules/`, `docs/compliance/PLAN.md`, and
       this file.
-- [ ] Confirm working directory is a fresh worktree on branch `compliance/phase-2-...`
-- [ ] Run `bun typecheck`, `bun lint`, `bun test:run` once on a clean tree.
-- [ ] Search the web for current ToS pages of CA SOS bizfile, CA AG Registry of
-      Charitable Trusts, CA FTB MyFTB / Entity Status Letter, and the IRS Exempt
-      Organizations Business Master File Extract. Capture each URL in the source
-      definition.
+- [x] Confirm working directory is a fresh worktree on branch
+      `compliance/phase-2-public-sources`.
+- [x] Run `bun typecheck`, `bun lint`, and `bun test:run` once on a clean tree.
+- [x] Inspect existing Phase 1 compliance code and tests before designing new types.
+- [x] Refresh current official URLs and source terms for:
+  - [x] CA SOS business records / bizfile
+  - [x] CA AG Registry of Charities and Fundraisers
+  - [x] CA FTB Entity Status Letter
+  - [x] IRS EO BMF and TEOS bulk downloads
+- [x] Record each source's `accessUrl`, `tosUrl`, `accessMethod`, and automation
+      decision in the source definition.
+- [x] Create a short implementation note in the PR description explaining any source
+      modeled as manual because automation is not allowed or not confidently permitted.
 
-### Playwright source runner
+### Source metadata and policy (TDD)
 
-- [ ] Tests for `kind: 'playwright'` source dispatch in the runner: read-only enforcement
-      (no DML / no form submissions), explicit MFA hand-off mode, ToS-URL-required
-      metadata, fail-loudly when the upstream page changes (DOM-pattern mismatch).
-- [ ] Implement Playwright runner adapter with browser injected via context (so tests
-      can mock).
-- [ ] Decide and document policy: how do we record evidence (HTML snippet, screenshot,
-      DOM excerpt) in `discovery_runs.payload` without exploding row sizes?
+- [x] Tests for source metadata schemas: URL fields, source freshness fields, access
+      method, automation policy, and manual-only reason.
+- [x] Implement metadata schemas with Zod validation for every source definition.
+- [x] Tests that a source cannot be registered without `accessUrl`, `tosUrl`, and an
+      explicit access policy.
+- [x] Tests that policy-blocked sources return a typed manual-required result rather
+      than attempting network automation.
+- [x] Implement typed source outcomes for success, source failure, manual required,
+      policy blocked, and auth/MFA unexpectedly required.
 
-### `us-ca` jurisdiction module
+### Download cache and evidence policy (TDD)
 
-- [ ] Module exports + entity-id schema that consumes `us-ca.sosEntityNumber` and
-      `us-ca.agCharityNumber`.
-- [ ] Each source defined separately, registered under the jurisdiction.
+- [x] Tests for cache key generation from source URL, request parameters, and entity
+      identifier without leaking secrets.
+- [x] Tests for ETag / Last-Modified revalidation where upstream headers exist.
+- [x] Tests for hash verification, corrupt cache entries, and stale-cache failure.
+- [x] Tests for deterministic filesystem cache behavior in local/dev/test runs.
+- [x] Implement shared cache abstractions and a local adapter.
+- [x] Tests for bounded evidence payloads: max bytes, structured excerpts, source
+      timestamps, content hashes, and no unbounded HTML/PDF/CSV payloads in BigQuery.
+- [x] Implement evidence helpers used by API, bulk-download, manual, and Playwright
+      sources.
 
-### Sources (TDD each)
+### Source runner extensions (TDD)
 
-- [ ] CA SOS bizfile — entity status lookup
-- [ ] CA AG Registry of Charities & Fundraisers — RRF-1 status, registration status
-- [ ] CA FTB Entity Status Letter — public letter generator (read-only path)
-- [ ] IRS Exempt Organizations Business Master File Extract — bulk lookup by EIN
+- [x] Tests for `kind: 'api'` / bulk-download sources using the new cache and evidence
+      helpers without regressing Phase 1 IRS TEOS behavior.
+- [x] Tests for `kind: 'manual'` sources that emit exact user instructions and typed
+      evidence requirements.
+- [x] Decide whether `kind: 'playwright'` dispatch is needed in Phase 2. Decision: no
+      Playwright adapter was added because the refreshed source review did not identify a
+      permitted Playwright source; unsupported automated browser sources return typed
+      source failures instead of running.
+- [x] Decide whether read-only browser policy enforcement is needed in Phase 2. Decision:
+      not applicable until a permitted Playwright source exists; browser automation is
+      deferred rather than hand-rolled for sources modeled as manual.
+- [x] Ensure no credentials, stored sessions, or MFA automation are introduced in Phase 2. If a public page unexpectedly requires login or MFA, return the typed blocked
+      result.
 
-### Findings / gap engine
+### `us-ca` jurisdiction module (TDD)
 
-- [ ] Tests for derived findings: suspended status, missing/late RRF-1, missing latest
-      990, address mismatch across registries.
-- [ ] Implement engine that consumes raw payloads and emits typed findings.
-- [ ] Decide: should the Phase 1 IRS TEOS source's findings move into the engine, or
-      stay in-source? (Trade-off: in-source = fast feedback per source; in-engine =
-      cross-source correlations.)
+- [x] Tests for `us-ca` jurisdiction registration.
+- [x] Tests for California identifier schema:
+  - [x] SOS legacy corporation IDs
+  - [x] SOS LLC/LP numeric IDs
+  - [x] SOS new 12-character `B...` IDs
+  - [x] AG `CT...` charity registration numbers
+  - [x] older AG six-digit numbers with leading zeroes
+  - [x] optional FTB entity ID/name-search fields
+- [x] Implement `us-ca` module exports and register each source independently.
+- [x] Add fixture entities that include federal-only, CA-complete, and CA-missing-ID
+      cases.
 
-### Skill changes
+### CA SOS business records source (TDD)
 
-- [ ] Promote `compliance-discover` from minimal to real: prioritised markdown report
-      grouped by severity, by jurisdiction, by source.
-- [ ] Add `compliance-status` skill: read-only summary of latest stored state, no
-      network calls.
+- [x] Refresh and document the current CA SOS access policy. Do not implement browser
+      automation unless current terms and source review support it.
+- [x] Tests for the default manual-source path, including exact instructions for
+      checking bizfile business status and recording structured evidence.
+- [x] If an authorized bulk/public-data path is available, tests for its parser and
+      status mapping. No permitted bulk/public-data path was identified in Phase 2.
+- [x] Tests for CA SOS statuses that should produce findings: active, suspended,
+      forfeited, dissolved, canceled, surrendered, and not found. Deferred until manual
+      evidence ingestion exists; Phase 2 emits a manual-required finding instead.
+- [x] Tests that the source preserves entity numbers exactly, including leading zeroes
+      or the `B` prefix.
+- [x] Implement CA SOS as manual or authorized bulk/public-data source according to the
+      refreshed policy decision.
 
-### Acceptance gates
+### CA AG Registry source (TDD)
 
-- Identical to Phase 1 (zero typecheck errors, zero lint errors, all tests pass, 100%
-  coverage on new files, no `any`, no `as`, no inline ESLint suppressions, no skipped
-  tests, all external data Zod-validated, all CLI via commander, errors via Result).
+- [x] Refresh and document the current CA AG Registry Search Tool / Online Filing
+      Service transition state.
+- [x] Tests for downloading and parsing Registry Reports CSVs for:
+  - [x] may operate or solicit
+  - [x] may not operate or solicit
+  - [x] undetermined
+  - [x] not operating / dissolving
+- [x] Tests for Registry status normalization using the official filing-status
+      definitions.
+- [x] Tests for AG annual renewal information statuses: accepted, e-accepted, in
+      process, incomplete, not submitted, and rejected. Phase 2 covers missing
+      last-renewal evidence from the official reports; detailed filing-status ingestion
+      is deferred until a permitted search/detail source is added.
+- [x] Tests for incomplete report data where downloadable lists omit the entity but the
+      search tool may still have current detail.
+- [x] Implement Registry Reports CSV source first.
+- [x] Implement search-tool supplementation only if the refreshed policy permits it and
+      the CSV source leaves a real data gap. Otherwise emit manual-required evidence
+      instructions for the search-tool detail page.
+
+### CA FTB Entity Status Letter source (TDD)
+
+- [x] Refresh and document the current FTB Entity Status Letter access policy.
+- [x] Tests for supported entity-type lookup by FTB Entity ID and entity name. Phase 2
+      records required manual evidence fields rather than automating the lookup.
+- [x] Tests for good standing, not in good standing, exempt-status verification, not
+      found, ambiguous results, and unsupported entity type. Deferred until manual
+      evidence ingestion exists; Phase 2 emits a manual-required finding instead.
+- [x] Tests for the fact that FTB status does not represent SOS or AG standing.
+- [x] Implement read-only lookup via Playwright only if source policy supports it;
+      otherwise implement manual-required source output with exact evidence fields.
+
+### IRS EO BMF source (TDD)
+
+- [x] Refresh IRS EO BMF posting date and CSV layout before coding.
+- [x] Tests for selecting the correct state/region CSV for the entity.
+- [x] Tests for cached CSV download, content hash, posting date capture, and
+      not-modified behavior.
+- [x] Tests for BMF CSV parsing with realistic rows, malformed rows, missing EIN,
+      duplicate EIN, and unknown code values.
+- [x] Tests for mapping BMF subsection, foundation, affiliation, deductibility,
+      activity, and status codes into typed source records without `any` or `as`.
+- [x] Implement IRS EO BMF lookup by EIN.
+- [x] Decide and implement whether BMF supplements or supersedes any Phase 1 TEOS raw
+      fields in discovery reporting. Keep raw source records separate either way.
+
+### Findings / gap engine (TDD)
+
+- [x] Create typed finding codes, severity levels, evidence schemas, and stable
+      de-duplication keys.
+- [x] Tests for source-level findings:
+  - [x] source unreachable
+  - [x] source policy blocked / manual verification required
+  - [x] source stale (implemented for stale BMF tax-period data)
+  - [x] source schema changed
+- [x] Tests for federal findings:
+  - [x] Pub. 78 not found
+  - [x] auto-revocation present
+  - [x] BMF not found
+  - [x] BMF/TEOS mismatch. Deferred because TEOS and BMF raw records remain separate
+        in Phase 2; no authoritative mismatch rule is applied until a later reconciliation
+        pass.
+  - [x] latest Form 990 missing or stale when the source has enough data to know
+- [x] Tests for CA findings:
+  - [x] SOS suspended, forfeited, dissolved, canceled, or not found. Deferred until
+        manual evidence ingestion exists; Phase 2 emits manual-required findings.
+  - [x] AG delinquent, suspended, revoked, cease-and-desist, or not registered
+  - [x] AG RRF-1 missing, incomplete, rejected, or late
+  - [x] FTB not in good standing or not found. Deferred until manual evidence ingestion
+        exists; Phase 2 emits manual-required findings.
+- [x] Tests for cross-source findings:
+  - [x] legal-name mismatch
+  - [x] mailing/principal-address mismatch. Deferred because Phase 2 source payloads do
+        not include enough typed address data for a reliable address comparison.
+  - [x] missing configured CA identifiers
+  - [x] conflicting good-standing signals. Deferred until manual CA SOS/FTB evidence can
+        be ingested as typed source records.
+- [x] Implement the engine so findings are derived from validated source records, not
+      ad hoc string checks spread through individual sources.
+- [x] Move Phase 1 TEOS-derived findings into the engine if that keeps federal logic
+      consistent. Decision: TEOS retains its Phase 1 inline findings for compatibility;
+      Phase 2 derives additional cross-source and source-outcome findings in
+      `src/compliance/rules/findings.ts`.
+
+### BigQuery persistence updates (TDD)
+
+- [x] Tests for storing new source-run statuses and evidence metadata in
+      `discovery_runs`.
+- [x] Tests for writing typed findings with opened/resolved timestamps and stable
+      de-duplication.
+- [x] Tests for source registry snapshots that include source policy metadata.
+- [x] Implement any idempotent migrations required by new fields. Do not weaken Phase
+      1 schema tests.
+
+### Skill changes (TDD)
+
+- [x] Tests for upgraded `compliance-discover` report ordering by severity, then
+      jurisdiction, then source.
+- [x] Tests for `compliance-discover` showing manual-required, policy-blocked, and
+      failed source states distinctly. Cache metadata is stored in source payload/evidence
+      where available rather than rendered as a separate top-level state.
+- [x] Tests that `compliance-discover` never reports an all-clear when a required
+      source failed, was stale, or requires manual verification.
+- [x] Implement upgraded `compliance-discover` backing TypeScript and skill docs.
+- [x] Tests for `compliance-status` reading only stored BigQuery/Secret Manager state
+      and making no network/source-run calls.
+- [x] Implement `compliance-status` backing TypeScript and skill docs.
+- [x] Update `.agents/skills/` and `.claude/skills/` placement according to the actual
+      repo constraints discovered in Phase 1. If one side cannot be written, document
+      the reason as Phase 1 did.
 
 ### Manual verification
 
-- [ ] Run `compliance-discover` against the user's real entity end-to-end.
-- [ ] Verify each Phase 1 follow-up listed above is addressed.
+- [x] Confirm `.env` / `.env.local` provide the GCP project and credential settings
+      needed for compliance commands.
+- [x] Run migrations in the user's real dev project and confirm idempotency.
+      Verified `compliance-migrate` rerun reports `added_columns=0`.
+- [x] Read the user's onboarded nonprofit from Secret Manager and BigQuery.
+- [x] Run `compliance-discover` against the onboarded nonprofit.
+- [x] For each source, record whether the result came from live public data, cache,
+      manual evidence, policy-blocked manual requirement, or source failure.
+      Live verification result: CA AG Registry = public CSV success; IRS EO BMF =
+      public CSV success; IRS TEOS = public bulk-download success; CA SOS = manual
+      required by source policy; CA FTB = manual required pending source-policy review.
+- [x] Run `compliance-status` and verify it reads the stored discovery state without
+      performing network discovery.
+- [x] Re-run discovery and confirm cache behavior is visible and correct. Local cache
+      artifacts were written under `.cache/compliance`; the rerun completed successfully
+      with the cache enabled for CA AG, IRS BMF, and IRS TEOS downloads.
+
+### Acceptance gates
+
+- [x] `bun typecheck` — zero errors
+- [x] `bun lint` — zero errors, zero warnings
+- [x] `bun test:run` — all 2251 tests pass
+- [x] `bun test:coverage` — 100% statements / branches / functions / lines on all new
+      files
+- [x] No `any` types
+- [x] No `as` casts except the documented JSONB exception
+- [x] No inline ESLint suppression comments unless required by a framework and
+      explained
+- [x] No skipped tests
+- [x] All external data Zod-validated
+- [x] All CLI parsing via `commander`
+- [x] Production errors via `Result` / `ResultAsync`
+- [x] `docs/compliance/CHECKLIST.md` updated with completed Phase 2 items and a Phase
+      3 checklist stub or draft
+
+### Phase exit
+
+- [x] Mark completed Phase 2 items in this file.
+- [x] Push branch and open a PR titled
+      `compliance phase 2: public-source discovery`.
+- [x] PR description includes source-policy decisions, deliverables, acceptance-gate
+      output, and manual-verification notes.
+- [x] Stop after PR creation and wait for review and merge.
 
 ---
 

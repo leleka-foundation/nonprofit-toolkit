@@ -104,6 +104,9 @@ function makeSource(args: {
     kind: 'api',
     authRequired: false,
     description: 'fake',
+    accessUrl: 'https://example.com/source',
+    accessMethod: 'official_api',
+    automationAllowed: true,
     tosUrl: 'https://example.com/tos',
     run: vi.fn<Source['run']>(() => {
       const output: SourceRunOutput = {
@@ -229,7 +232,7 @@ describe('runDiscoveryProduction', () => {
     expect(result.isOk()).toBe(true)
     if (!result.isOk()) return
     expect(result.value.runs).toHaveLength(1)
-    expect(result.value.runs[0]?.outcome).toBe('ok')
+    expect(result.value.runs[0]?.outcome.status).toBe('success')
     expect(result.value.findings).toHaveLength(1)
 
     // The recorder fired two inserts (one run, one finding) plus one entity
@@ -297,6 +300,9 @@ describe('runDiscoveryProduction', () => {
       kind: 'api',
       authRequired: false,
       description: 'fake',
+      accessUrl: 'https://example.com/source',
+      accessMethod: 'official_api',
+      automationAllowed: true,
       tosUrl: 'https://example.com/tos',
       run: vi.fn<Source['run']>((_entity, ctx) =>
         ResultAsync.fromPromise(
@@ -348,9 +354,13 @@ describe('runDiscoveryProduction', () => {
 
     expect(result.isOk()).toBe(true)
     if (!result.isOk()) return
-    // Exactly one run, against the default `irs-teos` source.
-    expect(result.value.runs).toHaveLength(1)
-    expect(result.value.runs[0]?.sourceId).toBe('irs-teos')
+    expect(result.value.runs.map((run) => run.sourceId).sort()).toEqual([
+      'ca-ag-registry',
+      'ca-ftb-entity-status-letter',
+      'ca-sos-bizfile',
+      'irs-eo-bmf',
+      'irs-teos',
+    ])
   })
 
   it('returns a wiring error when jurisdiction registration fails', async () => {

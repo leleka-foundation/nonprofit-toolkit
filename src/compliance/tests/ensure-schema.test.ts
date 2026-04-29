@@ -28,6 +28,15 @@ function fakePort(
     createTable: vi.fn<ComplianceMigrationPort['createTable']>(() =>
       okAsync(undefined),
     ),
+    createOrReplaceView: vi.fn<ComplianceMigrationPort['createOrReplaceView']>(
+      () => okAsync(undefined),
+    ),
+    addTableColumn: vi.fn<ComplianceMigrationPort['addTableColumn']>(() =>
+      okAsync(undefined),
+    ),
+    tableColumnExists: vi.fn<ComplianceMigrationPort['tableColumnExists']>(() =>
+      okAsync(false),
+    ),
     ...overrides,
   }
 }
@@ -97,6 +106,8 @@ describe('didCreateAnything', () => {
         createdDataset: true,
         createdTables: [],
         skippedTables: ['entity', 'discovery_runs', 'findings', 'sources'],
+        addedColumns: [],
+        updatedViews: [],
       }),
     ).toBe(true)
   })
@@ -108,6 +119,8 @@ describe('didCreateAnything', () => {
         createdDataset: false,
         createdTables: ['findings'],
         skippedTables: ['entity', 'discovery_runs', 'sources'],
+        addedColumns: [],
+        updatedViews: [],
       }),
     ).toBe(true)
   })
@@ -119,7 +132,22 @@ describe('didCreateAnything', () => {
         createdDataset: false,
         createdTables: [],
         skippedTables: ['entity', 'discovery_runs', 'findings', 'sources'],
+        addedColumns: [],
+        updatedViews: ['current_open_findings'],
       }),
     ).toBe(false)
+  })
+
+  it('is true when schema upgrade columns were added', async () => {
+    const { didCreateAnything } = await import('../state/ensure-schema.ts')
+    expect(
+      didCreateAnything({
+        createdDataset: false,
+        createdTables: [],
+        skippedTables: ['entity', 'discovery_runs', 'findings', 'sources'],
+        addedColumns: ['sources.access_url'],
+        updatedViews: [],
+      }),
+    ).toBe(true)
   })
 })

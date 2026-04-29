@@ -12,8 +12,13 @@ import {
   FindingSeveritySchema,
   FindingStatusSchema,
   JurisdictionIdSchema,
+  SourceAccessMethodSchema,
+  SourceFreshnessSchema,
   SourceKindSchema,
+  SourceMetadataSchema,
   SourceRecordSchema,
+  SourceRunOutcomeSchema,
+  SourceRunOutputSchema,
 } from '../types/index.ts'
 
 describe('JurisdictionIdSchema', () => {
@@ -43,6 +48,23 @@ describe('SourceKindSchema', () => {
 
   it('rejects unknown kinds', () => {
     expect(() => SourceKindSchema.parse('graphql')).toThrow()
+  })
+})
+
+describe('SourceAccessMethodSchema', () => {
+  it.each([
+    'official_api',
+    'official_bulk_download',
+    'playwright_readonly',
+    'manual',
+  ])('accepts %s', (method) => {
+    expect(SourceAccessMethodSchema.parse(method)).toBe(method)
+  })
+
+  it('rejects unknown access methods', () => {
+    expect(() =>
+      SourceAccessMethodSchema.parse('undocumented_endpoint'),
+    ).toThrow()
   })
 })
 
@@ -116,9 +138,72 @@ describe('EntityIdentifiersSchema', () => {
     expect(parsed['us-ca']?.sosEntityNumber).toBe('C0123456')
   })
 
+  it('accepts CA SOS numeric and new B-prefixed entity numbers', () => {
+    expect(
+      EntityIdentifiersSchema.parse({
+        'us-ca': { sosEntityNumber: '201202310025' },
+      })['us-ca']?.sosEntityNumber,
+    ).toBe('201202310025')
+
+    expect(
+      EntityIdentifiersSchema.parse({
+        'us-ca': { sosEntityNumber: 'B20250000001' },
+      })['us-ca']?.sosEntityNumber,
+    ).toBe('B20250000001')
+  })
+
+  it('accepts CA AG CT numbers and older six-digit numbers with leading zeroes', () => {
+    expect(
+      EntityIdentifiersSchema.parse({
+        'us-ca': {
+          sosEntityNumber: 'C0123456',
+          agCharityNumber: 'CT0123456',
+        },
+      })['us-ca']?.agCharityNumber,
+    ).toBe('CT0123456')
+
+    expect(
+      EntityIdentifiersSchema.parse({
+        'us-ca': {
+          sosEntityNumber: 'C0123456',
+          agCharityNumber: '000123',
+        },
+      })['us-ca']?.agCharityNumber,
+    ).toBe('000123')
+  })
+
+  it('accepts optional CA FTB lookup identifiers', () => {
+    const parsed = EntityIdentifiersSchema.parse({
+      'us-ca': {
+        sosEntityNumber: 'C0123456',
+        ftbEntityId: '1234567',
+        ftbEntityName: 'Foo Foundation',
+      },
+    })
+
+    expect(parsed['us-ca']?.ftbEntityId).toBe('1234567')
+    expect(parsed['us-ca']?.ftbEntityName).toBe('Foo Foundation')
+  })
+
   it('rejects empty CA SOS entity number', () => {
     expect(() =>
       EntityIdentifiersSchema.parse({ 'us-ca': { sosEntityNumber: '' } }),
+    ).toThrow()
+  })
+
+  it('rejects malformed California identifiers', () => {
+    expect(() =>
+      EntityIdentifiersSchema.parse({
+        'us-ca': { sosEntityNumber: 'bad entity number!' },
+      }),
+    ).toThrow()
+    expect(() =>
+      EntityIdentifiersSchema.parse({
+        'us-ca': {
+          sosEntityNumber: 'C0123456',
+          agCharityNumber: 'charity 123',
+        },
+      }),
     ).toThrow()
   })
 })
@@ -247,6 +332,23 @@ describe('FindingSchema', () => {
     expect(result.opened_at).toBe('2024-03-02T00:00:00.000Z')
   })
 
+  it('parses BigQuery JSON evidence returned as a string', () => {
+    const result = FindingSchema.parse({
+      ...valid,
+      evidence: '{"source_record_pointer":"gs://bucket/x"}',
+    })
+
+    expect(result.evidence).toEqual({
+      source_record_pointer: 'gs://bucket/x',
+    })
+  })
+
+  it('rejects invalid JSON evidence strings', () => {
+    expect(() =>
+      FindingSchema.parse({ ...valid, evidence: '{"broken"' }),
+    ).toThrow()
+  })
+
   it('rejects unknown severity', () => {
     expect(() =>
       FindingSchema.parse({ ...valid, severity: 'critical' }),
@@ -280,6 +382,185 @@ describe('SourceRecordSchema', () => {
   it('rejects non-object payload', () => {
     expect(() =>
       SourceRecordSchema.parse({ ...valid, payload: 'foo' }),
+    ).toThrow()
+  })
+})
+
+describe('SourceFreshnessSchema', () => {
+  it('parses observed and upstream publication timestamps', () => {
+    const parsed = SourceFreshnessSchema.parse({
+      observedAt: '2026-04-28T00:00:00.000Z',
+      upstreamPublishedAt: '2026-04-15',
+    })
+    expect(parsed).toEqual({
+      observedAt: '2026-04-28T00:00:00.000Z',
+      upstreamPublishedAt: '2026-04-15',
+    })
+  })
+
+  it('rejects an empty observedAt value', () => {
+    expect(() => SourceFreshnessSchema.parse({ observedAt: '' })).toThrow()
+  })
+})
+
+describe('SourceMetadataSchema', () => {
+  const validAutomated = {
+    accessUrl:
+      'https://www.irs.gov/charities-non-profits/tax-exempt-organization-search-bulk-data-downloads',
+    tosUrl:
+      'https://www.irs.gov/charities-non-profits/tax-exempt-organization-search-bulk-data-downloads',
+    accessMethod: 'official_bulk_download',
+    automationAllowed: true,
+    sourceFreshness: {
+      observedAt: '2026-04-28T00:00:00.000Z',
+      upstreamPublishedAt: '2026-04-15',
+    },
+  }
+
+  it('parses metadata for an automated official bulk source', () => {
+    const parsed = SourceMetadataSchema.parse(validAutomated)
+    expect(parsed.accessMethod).toBe('official_bulk_download')
+    expect(parsed.automationAllowed).toBe(true)
+  })
+
+  it('requires an accessUrl', () => {
+    const missingAccessUrl: Record<string, unknown> = { ...validAutomated }
+    delete missingAccessUrl.accessUrl
+    expect(() => SourceMetadataSchema.parse(missingAccessUrl)).toThrow()
+  })
+
+  it('requires URL-shaped accessUrl and tosUrl values', () => {
+    expect(() =>
+      SourceMetadataSchema.parse({ ...validAutomated, accessUrl: 'not-a-url' }),
+    ).toThrow()
+    expect(() =>
+      SourceMetadataSchema.parse({ ...validAutomated, tosUrl: 'not-a-url' }),
+    ).toThrow()
+  })
+
+  it('requires a manual-only reason when automation is not allowed', () => {
+    expect(() =>
+      SourceMetadataSchema.parse({
+        ...validAutomated,
+        accessMethod: 'manual',
+        automationAllowed: false,
+      }),
+    ).toThrow()
+  })
+
+  it('rejects manual-only reasons on automated sources', () => {
+    expect(() =>
+      SourceMetadataSchema.parse({
+        ...validAutomated,
+        manualOnlyReason: 'not needed',
+      }),
+    ).toThrow()
+  })
+
+  it('parses manual-only source metadata with a reason', () => {
+    const parsed = SourceMetadataSchema.parse({
+      accessUrl: 'https://bizfileonline.sos.ca.gov/search/business',
+      tosUrl:
+        'https://www.sos.ca.gov/business-programs/bizfile/privacy-warning-terms-and-conditions-use',
+      accessMethod: 'manual',
+      automationAllowed: false,
+      manualOnlyReason:
+        'Published bizfile terms prohibit scraping or similar automated collection.',
+    })
+    expect(parsed.automationAllowed).toBe(false)
+    if (!parsed.automationAllowed) {
+      expect(parsed.manualOnlyReason).toContain('scraping')
+    }
+  })
+})
+
+describe('SourceRunOutputSchema', () => {
+  it('parses a successful source output', () => {
+    const parsed = SourceRunOutputSchema.parse({
+      record: {
+        record_id: '550e8400-e29b-41d4-a716-446655440000',
+        source_id: 'irs-teos',
+        fetched_at: '2024-03-01T00:00:00Z',
+        payload: { kind: 'pub78-hit' },
+      },
+      findings: [],
+    })
+    expect(parsed.record.source_id).toBe('irs-teos')
+  })
+})
+
+describe('SourceRunOutcomeSchema', () => {
+  it('parses a success outcome', () => {
+    const parsed = SourceRunOutcomeSchema.parse({
+      status: 'success',
+      output: {
+        record: {
+          record_id: '550e8400-e29b-41d4-a716-446655440000',
+          source_id: 'irs-teos',
+          fetched_at: '2024-03-01T00:00:00Z',
+          payload: { kind: 'pub78-hit' },
+        },
+        findings: [],
+      },
+    })
+    expect(parsed.status).toBe('success')
+  })
+
+  it('parses a source failure outcome', () => {
+    const parsed = SourceRunOutcomeSchema.parse({
+      status: 'source_failure',
+      source_id: 'irs-teos',
+      error_type: 'http',
+      message: 'IRS returned 502',
+    })
+    expect(parsed.status).toBe('source_failure')
+    if (parsed.status === 'source_failure') {
+      expect(parsed.error_type).toBe('http')
+    }
+  })
+
+  it('parses manual required evidence instructions', () => {
+    const parsed = SourceRunOutcomeSchema.parse({
+      status: 'manual_required',
+      source_id: 'ca-sos-bizfile',
+      instructions: ['Open bizfile search and record current entity status.'],
+      evidenceFields: [
+        {
+          key: 'entityStatus',
+          label: 'Entity status',
+          required: true,
+        },
+      ],
+    })
+    expect(parsed.status).toBe('manual_required')
+  })
+
+  it('parses policy-blocked and auth-required outcomes', () => {
+    expect(
+      SourceRunOutcomeSchema.parse({
+        status: 'policy_blocked',
+        source_id: 'ca-sos-bizfile',
+        reason: 'Automation is not permitted by the current source terms.',
+      }).status,
+    ).toBe('policy_blocked')
+
+    expect(
+      SourceRunOutcomeSchema.parse({
+        status: 'auth_required',
+        source_id: 'ca-ftb-entity-status-letter',
+        message: 'The public page unexpectedly required login.',
+      }).status,
+    ).toBe('auth_required')
+  })
+
+  it('rejects manual required outcomes without evidence fields', () => {
+    expect(() =>
+      SourceRunOutcomeSchema.parse({
+        status: 'manual_required',
+        source_id: 'ca-sos-bizfile',
+        instructions: ['Open bizfile search and record current entity status.'],
+        evidenceFields: [],
+      }),
     ).toThrow()
   })
 })
