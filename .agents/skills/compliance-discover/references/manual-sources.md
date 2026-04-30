@@ -28,6 +28,10 @@ Never treat a manual-required, blocked, auth-required, or failed source as an al
 These outcomes mean the compliance picture is incomplete until the missing evidence or
 source access is resolved.
 
+When automatic discovery finishes with manual-required or auth-required sources, the
+skill must actively ask the user to complete the `Action Required` section. A status-only
+summary is not a complete discovery test.
+
 ## Evidence handoff
 
 Ask the user to reply with the source id plus the evidence fields exactly as printed in

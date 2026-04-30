@@ -24,13 +24,19 @@ export function formatDiscoveryReport(report: DiscoveryReport): string {
     `# Compliance Discovery: ${report.entity.legal_name}`,
     '',
     `Status: ${isDiscoveryComplete(report) ? 'complete' : 'incomplete'}`,
+  ]
+  const actionRequired = formatActionRequired(report.runs)
+  if (actionRequired.length > 0) {
+    lines.push('', ...actionRequired)
+  }
+  lines.push(
     '',
     '## Source Runs',
     ...sortRuns(report.runs).map(formatRun),
     '',
     '## Findings',
     ...formatFindings(report.findings),
-  ]
+  )
 
   if (
     report.migration.createdDataset ||
@@ -46,6 +52,20 @@ export function formatDiscoveryReport(report: DiscoveryReport): string {
   return `${lines.join('\n')}\n`
 }
 
+type ManualRequiredRun = DiscoveryRun & {
+  readonly outcome: Extract<
+    DiscoveryRun['outcome'],
+    { readonly status: 'manual_required' }
+  >
+}
+
+type AuthRequiredRun = DiscoveryRun & {
+  readonly outcome: Extract<
+    DiscoveryRun['outcome'],
+    { readonly status: 'auth_required' }
+  >
+}
+
 function sortRuns(runs: readonly DiscoveryRun[]): DiscoveryRun[] {
   return runs
     .slice()
@@ -54,6 +74,92 @@ function sortRuns(runs: readonly DiscoveryRun[]): DiscoveryRun[] {
         left.jurisdictionId.localeCompare(right.jurisdictionId) ||
         left.sourceId.localeCompare(right.sourceId),
     )
+}
+
+function formatActionRequired(runs: readonly DiscoveryRun[]): string[] {
+  const sortedRuns = sortRuns(runs)
+  const manualRuns = sortedRuns.filter(isManualRequiredRun)
+  const authRuns = sortedRuns.filter(isAuthRequiredRun)
+  if (manualRuns.length === 0 && authRuns.length === 0) {
+    return []
+  }
+
+  const lines: string[] = [
+    '## Action Required',
+    'Discovery is incomplete until these manual or authenticated checks are completed.',
+  ]
+  if (manualRuns.length > 0) {
+    lines.push('', 'Manual checks:', ...manualRuns.map(formatManualActionItem))
+  }
+  if (authRuns.length > 0) {
+    lines.push(
+      '',
+      'Authenticated checks:',
+      'Sign in yourself with an authorized account and complete MFA yourself.',
+      ...authRuns.map(formatAuthActionItem),
+      'Do not paste passwords, MFA codes, backup codes, or session cookies into chat.',
+    )
+  }
+  lines.push(
+    '',
+    'Reply with one evidence block per source using the field keys exactly as shown below.',
+    ...manualRuns.flatMap(formatActionReplyBlock),
+    ...authRuns.flatMap(formatActionReplyBlock),
+  )
+  return lines
+}
+
+function isManualRequiredRun(run: DiscoveryRun): run is ManualRequiredRun {
+  return run.outcome.status === 'manual_required'
+}
+
+function isAuthRequiredRun(run: DiscoveryRun): run is AuthRequiredRun {
+  return run.outcome.status === 'auth_required'
+}
+
+function formatManualActionItem(run: ManualRequiredRun): string {
+  const label = `${run.jurisdictionId}/${run.sourceId}`
+  return `- Complete manual check \`${label}\`: open ${run.accessUrl} and return ${formatFieldKeys(
+    run.outcome.evidenceFields,
+  )}.`
+}
+
+function formatAuthActionItem(run: AuthRequiredRun): string {
+  const label = `${run.jurisdictionId}/${run.sourceId}`
+  const loginUrl = run.outcome.loginUrl ?? run.accessUrl
+  return `- Complete authenticated check \`${label}\`: sign in at ${loginUrl} and return ${formatOptionalFieldKeys(
+    run.outcome.evidenceFields,
+  )}.`
+}
+
+function formatFieldKeys(fields: readonly SourceManualEvidenceField[]): string {
+  return fields.map((field) => `\`${field.key}\``).join(', ')
+}
+
+function formatOptionalFieldKeys(
+  fields: readonly SourceManualEvidenceField[] | undefined,
+): string {
+  if (fields === undefined || fields.length === 0) {
+    return 'the evidence fields printed in the source-run details'
+  }
+  return formatFieldKeys(fields)
+}
+
+function formatActionReplyBlock(
+  run: ManualRequiredRun | AuthRequiredRun,
+): string[] {
+  const label = `${run.jurisdictionId}/${run.sourceId}`
+  if (isManualRequiredRun(run)) {
+    return [
+      `source: ${label}`,
+      ...run.outcome.evidenceFields.map(formatReplyField),
+    ]
+  }
+  const fields = run.outcome.evidenceFields
+  if (fields === undefined) {
+    return [`source: ${label}`]
+  }
+  return [`source: ${label}`, ...fields.map(formatReplyField)]
 }
 
 function formatRun(run: DiscoveryRun): string {
@@ -144,6 +250,9 @@ function formatAuthRun(
     ...outcome.credentialFields.map(formatCredentialField),
     '  Give these values back to the compliance-discover skill:',
     ...outcome.evidenceFields.map(formatEvidenceField),
+    '  Suggested reply format:',
+    `  source: ${label}`,
+    ...outcome.evidenceFields.map(formatReplyField),
     '  Forbidden actions:',
     ...outcome.forbiddenActions.map(
       (action, index) => `  ${index + 1}. ${action}`,

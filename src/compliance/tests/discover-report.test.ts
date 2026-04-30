@@ -134,6 +134,19 @@ describe('formatDiscoveryReport', () => {
     const rendered = formatDiscoveryReport(report())
 
     expect(rendered).toContain('Status: incomplete')
+    expect(rendered).toContain('## Action Required')
+    expect(rendered.indexOf('## Action Required')).toBeLessThan(
+      rendered.indexOf('## Source Runs'),
+    )
+    expect(rendered).toContain(
+      'Discovery is incomplete until these manual or authenticated checks are completed.',
+    )
+    expect(rendered).toContain(
+      '- Complete manual check `us-ca/ca-sos-bizfile`: open https://bizfileonline.sos.ca.gov/search/business and return `entity_status`, `status_date`.',
+    )
+    expect(rendered).toContain(
+      'Reply with one evidence block per source using the field keys exactly as shown below.',
+    )
     expect(rendered).toContain(
       '- ERROR us-ca/ca-ag-registry: failed (parse) CSV schema changed',
     )
@@ -388,8 +401,14 @@ describe('formatDiscoveryReport', () => {
       'Give these values back to the compliance-discover skill:',
     )
     expect(rendered).toContain('- account_status (required): Account status')
+    expect(rendered).toContain('Suggested reply format:')
+    expect(rendered).toContain('source: us-ca/ca-cdtfa-online-services')
+    expect(rendered).toContain('account_status: <Account status>')
     expect(rendered).toContain('Forbidden actions:')
     expect(rendered).toContain('1. Do not file returns.')
+    expect(rendered).toContain(
+      'Do not paste passwords, MFA codes, backup codes, or session cookies into chat.',
+    )
     expect(rendered).not.toContain('password-value')
   })
 
@@ -402,6 +421,7 @@ describe('formatDiscoveryReport', () => {
     })
 
     expect(rendered).toContain('Status: complete')
+    expect(rendered).not.toContain('## Action Required')
     expect(rendered).toContain('- None.')
   })
 

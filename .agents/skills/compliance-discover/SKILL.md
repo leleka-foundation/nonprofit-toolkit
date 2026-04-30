@@ -64,6 +64,7 @@ Use `formatDiscoveryReport` from `src/compliance/skills/discover-report.ts`. The
 shows:
 
 - Overall completeness.
+- An `Action Required` section whenever manual-required or auth-required sources remain.
 - Per-source state: `OK`, `MANUAL`, `BLOCKED`, `AUTH`, or `ERROR`.
 - For `MANUAL` sources: why automation is unavailable, the official URL to open, manual
   steps, required/optional evidence fields, and a suggested reply format the user can send
@@ -75,6 +76,11 @@ shows:
 Tell the user that successful, failed, manual-required, policy-blocked, and auth-required
 source outcomes are persisted in `compliance.discovery_runs`, and findings are persisted
 in `compliance.findings`.
+
+If the report contains `Action Required`, relay that section to the user as the next step
+and ask them to complete the listed manual/auth checks. Do not stop at a machine summary
+of source statuses. The skill is responsible for walking the user through the remaining
+manual work after automatic discovery finishes.
 
 When a source is not `OK`, do not summarize it as compliant. For manual-required and
 auth-required sources, preserve the report's field names exactly when asking the user for
