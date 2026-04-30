@@ -67,10 +67,10 @@ shows:
 - An `Action Required` section whenever manual-required or auth-required sources remain.
 - Per-source state: `OK`, `MANUAL`, `BLOCKED`, `AUTH`, or `ERROR`.
 - For `MANUAL` sources: why automation is unavailable, the official URL to open, manual
-  steps, required/optional evidence fields, and a suggested reply format the user can send
-  back to this skill.
-- For `AUTH` sources: login URL, source terms URL, credential/session mode, MFA mode,
-  setup steps, credential/session fields, evidence fields, and forbidden actions.
+  steps with the configured values already filled in, and human-readable result labels to
+  report back.
+- For `AUTH` sources: login URL, source terms URL, read-only setup steps with configured
+  identifiers already filled in, human-readable result labels, and forbidden actions.
 - Findings ordered by severity, then jurisdiction, then source.
 
 Tell the user that successful, failed, manual-required, policy-blocked, and auth-required
@@ -82,9 +82,20 @@ and ask them to complete the listed manual/auth checks. Do not stop at a machine
 of source statuses. The skill is responsible for walking the user through the remaining
 manual work after automatic discovery finishes.
 
+Do every check the code can perform before asking the user to do anything. For each
+manual/auth source, give the exact official URL and the exact value the user should enter
+when it is configured, such as the SOS entity number, AG charity number, FTB entity ID, or
+CDTFA account identifier. Do not say "enter the configured ID" when the ID is known.
+
+Use human names in user-facing instructions: for example, say "CA CDTFA Permit, License,
+or Account Verification," not `us-ca/ca-cdtfa-permit-license-verification`. Do not ask the
+user to fill raw evidence-field keys such as `entity_status`; ask for "entity status" in a
+plain sentence instead. Accept plain sentences or bullets from the user and map them to the
+internal evidence fields yourself.
+
 When a source is not `OK`, do not summarize it as compliant. For manual-required and
-auth-required sources, preserve the report's field names exactly when asking the user for
-evidence. If the user returns manual or authenticated evidence, do not claim it was
+auth-required sources, keep the instructions concise, clear, and written as full
+sentences. If the user returns manual or authenticated evidence, do not claim it was
 persisted unless a dedicated evidence-ingestion path has been implemented and successfully
 run.
 

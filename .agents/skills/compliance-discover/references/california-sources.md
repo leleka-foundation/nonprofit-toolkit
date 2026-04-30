@@ -43,6 +43,11 @@ Forbidden actions:
 - Do not change registrant profile, contact, account, or access information.
 - Do not send correspondence or respond to deficiency notices from the portal.
 
+User-facing walkthrough: give the official URL and the configured AG charity registration
+number if present. If no AG charity number is configured, give the exact legal name from
+onboarding. Ask for plain-language status details; do not ask the user to type the field
+keys above.
+
 ## CA SOS bizfile
 
 Source id: `us-ca/ca-sos-bizfile`
@@ -58,7 +63,8 @@ Source id: `us-ca/ca-sos-bizfile`
 Manual steps:
 
 1. Open the California Secretary of State bizfile business search.
-2. Search for the exact SOS entity number configured for this nonprofit.
+2. Search for the exact SOS entity number configured for this nonprofit; the report must
+   print the actual number.
 3. Record the displayed entity status, entity name, jurisdiction, and status date if shown.
 
 Evidence fields:
@@ -67,6 +73,9 @@ Evidence fields:
 - `entity_name` (required): Entity name
 - `jurisdiction` (optional): Jurisdiction
 - `status_date` (optional): Status date
+
+User-facing walkthrough: give the official URL and the actual SOS entity number. Ask for
+plain-language status details; do not ask the user to type the field keys above.
 
 ## CA FTB Entity Status Letter
 
@@ -81,7 +90,8 @@ Source id: `us-ca/ca-ftb-entity-status-letter`
 Manual steps:
 
 1. Open the FTB Entity Status Letter lookup.
-2. Search by FTB entity id if configured; otherwise search by exact legal name.
+2. Search by FTB entity id if configured; otherwise search by exact legal name. The report
+   must print whichever value is configured.
 3. Record whether the entity is in good standing with FTB and whether exempt status is
    verified.
 
@@ -90,6 +100,9 @@ Evidence fields:
 - `ftb_status` (required): FTB status
 - `exempt_status_verified` (optional): Exempt status verified
 - `letter_date` (optional): Letter date
+
+User-facing walkthrough: give the official URL and the actual FTB entity ID or legal name.
+Ask for plain-language status details; do not ask the user to type the field keys above.
 
 ## MyFTB
 
@@ -118,6 +131,10 @@ Forbidden actions:
 - Do not update account, address, representative, or access information.
 - Do not send messages, request relief, protest, appeal, or otherwise transact with FTB.
 
+User-facing walkthrough: give the official URL and the configured FTB entity ID or legal
+name. Ask for plain-language status details; do not ask the user to type the field keys
+above.
+
 ## CDTFA public permit/license/account verification
 
 Source id: `us-ca/ca-cdtfa-permit-license-verification`
@@ -133,7 +150,7 @@ Manual steps:
 1. Open CDTFA Online Services.
 2. Choose the option to verify a permit, license, or account.
 3. Search any configured seller permit, use-tax, special tax/fee, cigarette/tobacco, or
-   eWaste account number.
+   eWaste account number. The report must print each configured CDTFA identifier.
 4. Record the account type, account number, verification result, displayed owner name,
    and status date if shown.
 
@@ -144,6 +161,11 @@ Evidence fields:
 - `verification_status` (required): Verification status
 - `owner_name` (optional): Owner name
 - `status_date` (optional): Status date
+
+User-facing walkthrough: give the official URL and every configured CDTFA account
+identifier. If no CDTFA identifier is configured, say that clearly and ask the user to
+confirm whether they know of one. Ask for plain-language status details; do not ask the
+user to type the field keys above.
 
 ## CDTFA Online Services
 
@@ -173,3 +195,7 @@ Forbidden actions:
 - Do not add, remove, or change portal users, delegates, secondary logons, or access
   levels.
 - Do not upload documents or submit forms.
+
+User-facing walkthrough: give the official URL and every configured CDTFA account
+identifier. If no CDTFA identifier is configured, say that clearly. Ask for plain-language
+status details; do not ask the user to type the field keys above.

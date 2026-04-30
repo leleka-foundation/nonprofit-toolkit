@@ -1,8 +1,4 @@
-import type {
-  Finding,
-  SourceCredentialField,
-  SourceManualEvidenceField,
-} from '../types/index.ts'
+import type { Finding, SourceManualEvidenceField } from '../types/index.ts'
 import type { DiscoveryReport, DiscoveryRun } from './discover.ts'
 
 const SEVERITY_ORDER: Record<Finding['severity'], number> = {
@@ -25,14 +21,14 @@ export function formatDiscoveryReport(report: DiscoveryReport): string {
     '',
     `Status: ${isDiscoveryComplete(report) ? 'complete' : 'incomplete'}`,
   ]
-  const actionRequired = formatActionRequired(report.runs)
+  const actionRequired = formatActionRequired(report)
   if (actionRequired.length > 0) {
     lines.push('', ...actionRequired)
   }
   lines.push(
     '',
     '## Source Runs',
-    ...sortRuns(report.runs).map(formatRun),
+    ...sortRuns(report.runs).map((run) => formatRun(report, run)),
     '',
     '## Findings',
     ...formatFindings(report.findings),
@@ -66,6 +62,19 @@ type AuthRequiredRun = DiscoveryRun & {
   >
 }
 
+const SOURCE_DISPLAY_NAMES: Record<string, string> = {
+  'ca-ag-online-filing': 'CA Attorney General Online Filing',
+  'ca-ag-registry': 'CA Attorney General Registry Reports',
+  'ca-cdtfa-online-services': 'CA CDTFA Online Services',
+  'ca-cdtfa-permit-license-verification':
+    'CA CDTFA Permit, License, or Account Verification',
+  'ca-ftb-entity-status-letter': 'CA Franchise Tax Board Entity Status Letter',
+  'ca-ftb-myftb': 'CA Franchise Tax Board MyFTB',
+  'ca-sos-bizfile': 'CA Secretary of State bizfile',
+  'irs-eo-bmf': 'IRS Exempt Organizations Business Master File',
+  'irs-teos': 'IRS Tax Exempt Organization Search',
+}
+
 function sortRuns(runs: readonly DiscoveryRun[]): DiscoveryRun[] {
   return runs
     .slice()
@@ -76,8 +85,8 @@ function sortRuns(runs: readonly DiscoveryRun[]): DiscoveryRun[] {
     )
 }
 
-function formatActionRequired(runs: readonly DiscoveryRun[]): string[] {
-  const sortedRuns = sortRuns(runs)
+function formatActionRequired(report: DiscoveryReport): string[] {
+  const sortedRuns = sortRuns(report.runs)
   const manualRuns = sortedRuns.filter(isManualRequiredRun)
   const authRuns = sortedRuns.filter(isAuthRequiredRun)
   if (manualRuns.length === 0 && authRuns.length === 0) {
@@ -87,24 +96,27 @@ function formatActionRequired(runs: readonly DiscoveryRun[]): string[] {
   const lines: string[] = [
     '## Action Required',
     'Discovery is incomplete until these manual or authenticated checks are completed.',
+    'I completed every source that can be checked automatically. These remaining sources require a manual website check or a user-owned authenticated session.',
   ]
   if (manualRuns.length > 0) {
-    lines.push('', 'Manual checks:', ...manualRuns.map(formatManualActionItem))
+    lines.push(
+      '',
+      'Manual checks:',
+      ...manualRuns.flatMap((run) => formatManualActionItem(report, run)),
+    )
   }
   if (authRuns.length > 0) {
     lines.push(
       '',
       'Authenticated checks:',
-      'Sign in yourself with an authorized account and complete MFA yourself.',
-      ...authRuns.map(formatAuthActionItem),
+      'I cannot sign in or complete MFA for you. Use an authorized account and complete MFA yourself.',
+      ...authRuns.flatMap((run) => formatAuthActionItem(report, run)),
       'Do not paste passwords, MFA codes, backup codes, or session cookies into chat.',
     )
   }
   lines.push(
     '',
-    'Reply with one evidence block per source using the field keys exactly as shown below.',
-    ...manualRuns.flatMap(formatActionReplyBlock),
-    ...authRuns.flatMap(formatActionReplyBlock),
+    'Reply in plain sentences or bullets. I will map your answers into structured compliance evidence.',
   )
   return lines
 }
@@ -117,70 +129,45 @@ function isAuthRequiredRun(run: DiscoveryRun): run is AuthRequiredRun {
   return run.outcome.status === 'auth_required'
 }
 
-function formatManualActionItem(run: ManualRequiredRun): string {
-  const label = `${run.jurisdictionId}/${run.sourceId}`
-  return `- Complete manual check \`${label}\`: open ${run.accessUrl} and return ${formatFieldKeys(
-    run.outcome.evidenceFields,
-  )}.`
-}
-
-function formatAuthActionItem(run: AuthRequiredRun): string {
-  const label = `${run.jurisdictionId}/${run.sourceId}`
-  const loginUrl = run.outcome.loginUrl ?? run.accessUrl
-  return `- Complete authenticated check \`${label}\`: sign in at ${loginUrl} and return ${formatOptionalFieldKeys(
-    run.outcome.evidenceFields,
-  )}.`
-}
-
-function formatFieldKeys(fields: readonly SourceManualEvidenceField[]): string {
-  return fields.map((field) => `\`${field.key}\``).join(', ')
-}
-
-function formatOptionalFieldKeys(
-  fields: readonly SourceManualEvidenceField[] | undefined,
-): string {
-  if (fields === undefined || fields.length === 0) {
-    return 'the evidence fields printed in the source-run details'
-  }
-  return formatFieldKeys(fields)
-}
-
-function formatActionReplyBlock(
-  run: ManualRequiredRun | AuthRequiredRun,
+function formatManualActionItem(
+  report: DiscoveryReport,
+  run: ManualRequiredRun,
 ): string[] {
-  const label = `${run.jurisdictionId}/${run.sourceId}`
-  if (isManualRequiredRun(run)) {
-    return [
-      `source: ${label}`,
-      ...run.outcome.evidenceFields.map(formatReplyField),
-    ]
-  }
-  const fields = run.outcome.evidenceFields
-  if (fields === undefined) {
-    return [`source: ${label}`]
-  }
-  return [`source: ${label}`, ...fields.map(formatReplyField)]
+  return [
+    `${formatSourceName(run)}:`,
+    ...formatNumberedSteps(formatManualSteps(report, run, run.outcome)),
+  ]
 }
 
-function formatRun(run: DiscoveryRun): string {
-  const label = `${run.jurisdictionId}/${run.sourceId}`
+function formatAuthActionItem(
+  report: DiscoveryReport,
+  run: AuthRequiredRun,
+): string[] {
+  return [
+    `${formatSourceName(run)}:`,
+    ...formatNumberedSteps(formatAuthSteps(report, run, run.outcome)),
+  ]
+}
+
+function formatRun(report: DiscoveryReport, run: DiscoveryRun): string {
+  const label = formatSourceName(run)
   const outcome = run.outcome
-  if (outcome.status === 'success') {
-    return `- OK ${label}: success`
+  switch (outcome.status) {
+    case 'success':
+      return `- OK ${label}: success`
+    case 'manual_required':
+      return formatManualRun(report, label, run, outcome)
+    case 'policy_blocked':
+      return `- BLOCKED ${label}: ${outcome.reason}`
+    case 'auth_required':
+      return formatAuthRun(report, label, run, outcome)
+    case 'source_failure':
+      return `- ERROR ${label}: failed (${outcome.error_type}) ${outcome.message}`
   }
-  if (outcome.status === 'manual_required') {
-    return formatManualRun(label, run, outcome)
-  }
-  if (outcome.status === 'policy_blocked') {
-    return `- BLOCKED ${label}: ${outcome.reason}`
-  }
-  if (outcome.status === 'auth_required') {
-    return formatAuthRun(label, run, outcome)
-  }
-  return `- ERROR ${label}: failed (${outcome.error_type}) ${outcome.message}`
 }
 
 function formatManualRun(
+  report: DiscoveryReport,
   label: string,
   run: DiscoveryRun,
   outcome: Extract<DiscoveryRun['outcome'], { status: 'manual_required' }>,
@@ -188,17 +175,14 @@ function formatManualRun(
   return [
     `- MANUAL ${label}: manual verification required`,
     `  Why automatic scan is unavailable: ${formatManualOnlyReason(run)}`,
-    `  Open manually: ${run.accessUrl}`,
+    `  Official URL: ${run.accessUrl}`,
     `  Source terms reviewed: ${run.tosUrl}`,
     '  Manual steps:',
-    ...outcome.instructions.map(
-      (instruction, index) => `  ${index + 1}. ${instruction}`,
+    ...formatNumberedSteps(formatManualSteps(report, run, outcome)).map(
+      (step) => `  ${step}`,
     ),
-    '  Give these values back to the compliance-discover skill:',
+    '  Tell me these values after you complete the check:',
     ...outcome.evidenceFields.map(formatEvidenceField),
-    '  Suggested reply format:',
-    `  source: ${label}`,
-    ...outcome.evidenceFields.map(formatReplyField),
   ].join('\n')
 }
 
@@ -210,15 +194,11 @@ function formatManualOnlyReason(run: DiscoveryRun): string {
 }
 
 function formatEvidenceField(field: SourceManualEvidenceField): string {
-  const requirement = field.required ? 'required' : 'optional'
-  return `  - ${field.key} (${requirement}): ${field.label}`
-}
-
-function formatReplyField(field: SourceManualEvidenceField): string {
-  return `  ${field.key}: <${field.label}>`
+  return `  - ${formatEvidenceLabel(field)}`
 }
 
 function formatAuthRun(
+  report: DiscoveryReport,
   label: string,
   run: DiscoveryRun,
   outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
@@ -237,33 +217,20 @@ function formatAuthRun(
 
   return [
     `- AUTH ${label}: authenticated verification required`,
-    `  ${outcome.message}`,
     `  Login URL: ${outcome.loginUrl}`,
     `  Source terms reviewed: ${run.tosUrl}`,
-    `  Credential/session mode: ${outcome.credentialMode}`,
-    `  MFA: ${outcome.mfa}`,
+    '  Credential handling: Sign in yourself; do not paste passwords, MFA codes, backup codes, or session cookies into chat.',
     '  Auth/setup steps:',
-    ...outcome.instructions.map(
-      (instruction, index) => `  ${index + 1}. ${instruction}`,
+    ...formatNumberedSteps(formatAuthSteps(report, run, outcome)).map(
+      (step) => `  ${step}`,
     ),
-    '  Credential/session fields:',
-    ...outcome.credentialFields.map(formatCredentialField),
-    '  Give these values back to the compliance-discover skill:',
+    '  Tell me these values after you complete the check:',
     ...outcome.evidenceFields.map(formatEvidenceField),
-    '  Suggested reply format:',
-    `  source: ${label}`,
-    ...outcome.evidenceFields.map(formatReplyField),
     '  Forbidden actions:',
     ...outcome.forbiddenActions.map(
       (action, index) => `  ${index + 1}. ${action}`,
     ),
   ].join('\n')
-}
-
-function formatCredentialField(field: SourceCredentialField): string {
-  const requirement = field.required ? 'required' : 'optional'
-  const secrecy = field.secret ? 'secret' : 'non-secret'
-  return `  - ${field.key} (${requirement}, ${secrecy}): ${field.label}`
 }
 
 function formatFindings(findings: readonly Finding[]): string[] {
@@ -284,5 +251,272 @@ function compareFindings(left: Finding, right: Finding): number {
 }
 
 function formatFinding(finding: Finding): string {
-  return `- ${finding.severity.toUpperCase()} ${finding.jurisdiction_id}/${finding.source_id}: ${finding.title} - ${finding.detail}`
+  return `- ${finding.severity.toUpperCase()} ${formatFindingSourceName(
+    finding.source_id,
+  )}: ${finding.title} - ${formatFindingDetail(finding.detail)}`
+}
+
+function formatFindingDetail(detail: string): string {
+  let formatted = detail
+  for (const [sourceId, sourceName] of Object.entries(SOURCE_DISPLAY_NAMES)) {
+    formatted = formatted
+      .replaceAll(`Source "${sourceId}"`, sourceName)
+      .replaceAll(sourceId, sourceName)
+  }
+  return formatted
+}
+
+function formatSourceName(run: DiscoveryRun): string {
+  return (
+    SOURCE_DISPLAY_NAMES[run.sourceId] ?? formatDescription(run.description)
+  )
+}
+
+function formatFindingSourceName(sourceId: string): string {
+  return SOURCE_DISPLAY_NAMES[sourceId] ?? humanizeIdentifier(sourceId)
+}
+
+function formatDescription(description: string): string {
+  const withoutTrailingPeriod = description.endsWith('.')
+    ? description.slice(0, -1)
+    : description
+  return withoutTrailingPeriod
+    .replace(/^Manual /, '')
+    .replace(/^User-assisted /, '')
+}
+
+function humanizeIdentifier(identifier: string): string {
+  return identifier
+    .split('-')
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatNumberedSteps(steps: readonly string[]): string[] {
+  return steps.map((step, index) => `${index + 1}. ${step}`)
+}
+
+function formatManualSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'manual_required' }>,
+): string[] {
+  if (run.sourceId === 'ca-sos-bizfile') {
+    return formatCaSosBizfileManualSteps(report, run)
+  }
+  if (run.sourceId === 'ca-ftb-entity-status-letter') {
+    return formatCaFtbEntityStatusLetterManualSteps(report, run)
+  }
+  if (run.sourceId === 'ca-cdtfa-permit-license-verification') {
+    return formatCaCdtfaPermitLicenseVerificationManualSteps(report, run)
+  }
+  return [
+    `Open ${formatSourceName(run)}: ${run.accessUrl}`,
+    `Use this exact legal name: ${report.entity.legal_name}.`,
+    formatEvidenceSummary(outcome.evidenceFields),
+  ]
+}
+
+function formatAuthSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
+): string[] {
+  if (run.sourceId === 'ca-ag-online-filing') {
+    return formatCaAgOnlineFilingAuthSteps(report, run, outcome)
+  }
+  if (run.sourceId === 'ca-ftb-myftb') {
+    return formatCaFtbMyFtbAuthSteps(report, run, outcome)
+  }
+  if (run.sourceId === 'ca-cdtfa-online-services') {
+    return formatCaCdtfaOnlineServicesAuthSteps(report, run, outcome)
+  }
+
+  const evidenceFields = outcome.evidenceFields ?? []
+  return [
+    formatAuthOpenStep(run, outcome),
+    'Sign in yourself with an authorized account and complete MFA yourself.',
+    formatEvidenceSummary(evidenceFields),
+  ]
+}
+
+function formatCaSosBizfileManualSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+): string[] {
+  const caIdentifiers = report.identifiers['us-ca']
+  const searchStep =
+    caIdentifiers === undefined
+      ? `Search for this exact legal name: ${report.entity.legal_name}.`
+      : `Search for this SOS entity number: ${caIdentifiers.sosEntityNumber}.`
+  return [
+    `Open ${formatSourceName(run)}: ${run.accessUrl}`,
+    searchStep,
+    'Tell me the entity status and entity name. Include the jurisdiction and status date if they are shown.',
+  ]
+}
+
+function formatCaFtbEntityStatusLetterManualSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+): string[] {
+  return [
+    `Open ${formatSourceName(run)}: ${run.accessUrl}`,
+    formatFtbSearchStep(report),
+    `Use this exact legal name if the site asks for a name: ${formatFtbEntityName(
+      report,
+    )}.`,
+    'Tell me the FTB status, whether exempt status is verified, and the letter date if shown.',
+  ]
+}
+
+function formatCaCdtfaPermitLicenseVerificationManualSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+): string[] {
+  return [
+    `Open ${formatSourceName(run)}: ${run.accessUrl}`,
+    'Choose the option to verify a permit, license, or account.',
+    formatCdtfaManualIdentifierStep(report),
+    'Tell me the account type, account number, verification status, owner name if shown, and status date if shown.',
+  ]
+}
+
+function formatCaAgOnlineFilingAuthSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
+): string[] {
+  const caIdentifiers = report.identifiers['us-ca']
+  const dashboardStep =
+    caIdentifiers?.agCharityNumber === undefined
+      ? `Open the charity dashboard for this exact legal name: ${report.entity.legal_name}.`
+      : `Open the charity dashboard for this AG charity registration number: ${caIdentifiers.agCharityNumber}.`
+  return [
+    formatAuthOpenStep(run, outcome),
+    'Sign in yourself with an authorized account and complete MFA yourself.',
+    dashboardStep,
+    'Tell me whether Online Filing Service access is available, the dashboard status, latest submission status if shown, deficiency or correspondence messages if shown, and the reviewed-at date.',
+  ]
+}
+
+function formatCaFtbMyFtbAuthSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
+): string[] {
+  return [
+    formatAuthOpenStep(run, outcome),
+    'Sign in yourself with an authorized business representative account and complete MFA yourself.',
+    formatFtbBusinessAccountStep(report),
+    'Tell me whether business account access is available, the FTB account status, action-required messages if shown, and the reviewed-at date.',
+  ]
+}
+
+function formatCaCdtfaOnlineServicesAuthSteps(
+  report: DiscoveryReport,
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
+): string[] {
+  return [
+    formatAuthOpenStep(run, outcome),
+    'Sign in yourself with an authorized account and complete MFA yourself.',
+    formatCdtfaAuthIdentifierStep(report),
+    'Tell me whether any CDTFA-managed account is present, the account statuses shown in Online Services, open filing obligations or none shown, notices or billings shown if any, and the reviewed-at date.',
+  ]
+}
+
+function formatAuthOpenStep(
+  run: DiscoveryRun,
+  outcome: Extract<DiscoveryRun['outcome'], { status: 'auth_required' }>,
+): string {
+  return `Open ${formatSourceName(run)}: ${outcome.loginUrl ?? run.accessUrl}`
+}
+
+function formatFtbSearchStep(report: DiscoveryReport): string {
+  const caIdentifiers = report.identifiers['us-ca']
+  if (caIdentifiers?.ftbEntityId !== undefined) {
+    return `Search for this FTB entity ID: ${caIdentifiers.ftbEntityId}.`
+  }
+  return `Search for this exact legal name: ${formatFtbEntityName(report)}.`
+}
+
+function formatFtbBusinessAccountStep(report: DiscoveryReport): string {
+  const caIdentifiers = report.identifiers['us-ca']
+  if (caIdentifiers?.ftbEntityId !== undefined) {
+    return `Open the business account for this FTB entity ID: ${caIdentifiers.ftbEntityId}.`
+  }
+  return `Open the business account for this exact legal name: ${formatFtbEntityName(
+    report,
+  )}.`
+}
+
+function formatFtbEntityName(report: DiscoveryReport): string {
+  return report.identifiers['us-ca']?.ftbEntityName ?? report.entity.legal_name
+}
+
+function formatCdtfaManualIdentifierStep(report: DiscoveryReport): string {
+  const identifiers = listCdtfaAccountIdentifiers(report)
+  if (identifiers.length === 0) {
+    return 'No CDTFA account identifier is configured. If the organization has a CDTFA permit, license, or account number, use that number; otherwise tell me no CDTFA account identifier is available.'
+  }
+  return `Search these CDTFA account identifiers: ${formatList(identifiers)}.`
+}
+
+function formatCdtfaAuthIdentifierStep(report: DiscoveryReport): string {
+  const identifiers = listCdtfaAccountIdentifiers(report)
+  if (identifiers.length === 0) {
+    return 'No CDTFA account identifier is configured. If the portal shows a CDTFA-managed account for this organization, use that account; otherwise tell me no CDTFA-managed account is present.'
+  }
+  return `Use these CDTFA account identifiers if the portal asks you to choose an account: ${formatList(
+    identifiers,
+  )}.`
+}
+
+function listCdtfaAccountIdentifiers(report: DiscoveryReport): string[] {
+  const caIdentifiers = report.identifiers['us-ca']
+  const identifiers: string[] = []
+  if (caIdentifiers?.cdtfaSellerPermitNumber !== undefined) {
+    identifiers.push(caIdentifiers.cdtfaSellerPermitNumber)
+  }
+  if (caIdentifiers?.cdtfaUseTaxAccountNumber !== undefined) {
+    identifiers.push(caIdentifiers.cdtfaUseTaxAccountNumber)
+  }
+  if (caIdentifiers?.cdtfaSpecialTaxAccountNumber !== undefined) {
+    identifiers.push(caIdentifiers.cdtfaSpecialTaxAccountNumber)
+  }
+  return identifiers
+}
+
+function formatEvidenceSummary(
+  fields: readonly SourceManualEvidenceField[],
+): string {
+  if (fields.length === 0) {
+    return 'Tell me what status or account information is visible after the read-only check.'
+  }
+  return `Tell me these results: ${formatList(fields.map(formatEvidenceLabel))}.`
+}
+
+function formatEvidenceLabel(field: SourceManualEvidenceField): string {
+  if (field.required) {
+    return `${field.label} (required)`
+  }
+  if (isSelfQualifiedOptionalLabel(field.label)) {
+    return field.label
+  }
+  return `${field.label} if shown`
+}
+
+function isSelfQualifiedOptionalLabel(label: string): boolean {
+  const lowerLabel = label.toLowerCase()
+  return (
+    lowerLabel.includes('if shown') ||
+    lowerLabel.includes('if any') ||
+    lowerLabel.includes('or none shown')
+  )
+}
+
+function formatList(values: readonly string[]): string {
+  return values.join(', ')
 }
