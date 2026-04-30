@@ -63,7 +63,7 @@ type AuthRequiredRun = DiscoveryRun & {
 }
 
 const SOURCE_DISPLAY_NAMES: Record<string, string> = {
-  'ca-ag-online-filing': 'CA Attorney General Online Filing',
+  'ca-ag-online-filing': 'CA Attorney General Online Renewal System',
   'ca-ag-registry': 'CA Attorney General Registry Reports',
   'ca-cdtfa-online-services': 'CA CDTFA Online Services',
   'ca-cdtfa-permit-license-verification':
@@ -74,6 +74,9 @@ const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'irs-eo-bmf': 'IRS Exempt Organizations Business Master File',
   'irs-teos': 'IRS Tax Exempt Organization Search',
 }
+
+const CA_AG_REGISTRY_SEARCH_URL =
+  'https://rct.doj.ca.gov/Verification/Web/Search.aspx?facility=Y'
 
 function sortRuns(runs: readonly DiscoveryRun[]): DiscoveryRun[] {
   return runs
@@ -391,13 +394,16 @@ function formatCaAgOnlineFilingAuthSteps(
   const caIdentifiers = report.identifiers['us-ca']
   const dashboardStep =
     caIdentifiers?.agCharityNumber === undefined
-      ? `Open the charity dashboard for this exact legal name: ${report.entity.legal_name}.`
-      : `Open the charity dashboard for this AG charity registration number: ${caIdentifiers.agCharityNumber}.`
+      ? `Open the renewal account for this exact legal name: ${report.entity.legal_name}.`
+      : `Open the renewal account for this AG charity registration number: ${caIdentifiers.agCharityNumber}.`
   return [
     formatAuthOpenStep(run, outcome),
-    'Sign in yourself with an authorized account and complete MFA yourself.',
+    `CA AG public charity status is already checked automatically from CA Attorney General Registry Reports. Use the Registry Search Tool at ${CA_AG_REGISTRY_SEARCH_URL} only if you need to confirm online-renewal eligibility.`,
+    'Use the renewal login only if the Registry Search Tool shows the organization as Current or Current - Awaiting Reporting and an authorized agent has a User ID and Password, Account Code, or Registration Code.',
+    'Sign in yourself with an authorized account and complete MFA yourself. Do not create, edit, submit, or pay for a filing.',
     dashboardStep,
-    'Tell me whether Online Filing Service access is available, the dashboard status, latest submission status if shown, deficiency or correspondence messages if shown, and the reviewed-at date.',
+    'If there is no login option or the organization is not eligible for online renewal, tell me that Online Renewal System access is unavailable and give the reason shown.',
+    'Tell me whether Online Renewal System access is available, the dashboard status or unavailable reason, latest submission status if shown, deficiency or correspondence messages if shown, and the reviewed-at date.',
   ]
 }
 

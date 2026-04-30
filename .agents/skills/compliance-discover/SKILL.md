@@ -23,7 +23,7 @@ current report needs that detail.
 
 - `references/manual-sources.md` - use when a report contains `MANUAL`, `BLOCKED`,
   or `AUTH` sources, or when the user asks how to complete a source by hand.
-- `references/california-sources.md` - use for CA AG Registry, CA AG Online Filing,
+- `references/california-sources.md` - use for CA AG Registry, CA AG Online Renewal,
   CA SOS bizfile, CA FTB Entity Status Letter, MyFTB, and CDTFA details.
 - `references/federal-sources.md` - use for IRS TEOS, IRS EO BMF, and IRS Tax Pro
   Account source decisions.

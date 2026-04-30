@@ -170,6 +170,24 @@ describe('usCaJurisdiction', () => {
     }
   })
 
+  it('points CA AG authenticated review at the direct Online Renewal System login', () => {
+    expect(caAgOnlineFilingSource.description).toContain(
+      'Online Renewal System',
+    )
+    expect(caAgOnlineFilingSource.accessUrl).toBe(
+      'https://rct.doj.ca.gov/eGov/Home.aspx',
+    )
+    expect(caAgOnlineFilingSource.auth?.loginUrl).toBe(
+      'https://rct.doj.ca.gov/eGov/Home.aspx',
+    )
+    expect(caAgOnlineFilingSource.auth?.instructions.join(' ')).toContain(
+      'Current or Current - Awaiting Reporting',
+    )
+    expect(caAgOnlineFilingSource.auth?.instructions.join(' ')).toContain(
+      'https://rct.doj.ca.gov/Verification/Web/Search.aspx?facility=Y',
+    )
+  })
+
   it('keeps authenticated portal source run methods as explicit auth ToS errors', async () => {
     const sources = [
       caCdtfaOnlineServicesSource,

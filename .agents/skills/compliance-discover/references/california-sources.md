@@ -15,20 +15,29 @@ Source id: `us-ca/ca-ag-registry`
 - User-facing note: successful CA AG output is a California charity-registration signal;
   it is not a substitute for CA SOS corporate status or CA FTB tax status.
 
-## CA AG Online Filing Service
+## CA AG Online Renewal System
 
 Source id: `us-ca/ca-ag-online-filing`
 
 - Access method: user-assisted authenticated read-only session.
-- Why authenticated: CA AG is rolling out the Online Filing Service as the authenticated
-  filing/dashboard surface while public Registry Reports remain the bulk source for
-  standing.
-- Official URL: `https://rct.doj.ca.gov/`
+- Why authenticated: the CA AG Online Renewal System requires an authorized user account
+  before the renewal dashboard can be reviewed. Public Registry Reports remain the bulk
+  source for standing.
+- Official login URL: `https://rct.doj.ca.gov/eGov/Home.aspx`
+- Public Registry Search Tool URL:
+  `https://rct.doj.ca.gov/Verification/Web/Search.aspx?facility=Y`
+- Official renewal information URL: `https://oag.ca.gov/charities/renewals`
+- Eligibility: use this login only when the Registry Search Tool shows the organization
+  as Current or Current - Awaiting Reporting and an authorized agent has a User ID and
+  Password, Account Code, or Registration Code.
+- Rollout note: the newer CA AG Online Filing Service is currently limited to new
+  registrations in the official guidance. Existing registrants continue to use the Online
+  Renewal System until the broader 2026 rollout replaces existing systems.
 - Terms/reference URL: `https://oag.ca.gov/privacy`
 
 Evidence fields:
 
-- `online_filing_access` (required): Whether Online Filing Service access is available
+- `online_filing_access` (required): Whether Online Renewal System access is available
 - `dashboard_status` (required): Dashboard status or unavailable reason
 - `latest_submission_status` (optional): Latest submission status
 - `deficiency_or_correspondence` (optional): Deficiency/correspondence messages or none
@@ -43,10 +52,15 @@ Forbidden actions:
 - Do not change registrant profile, contact, account, or access information.
 - Do not send correspondence or respond to deficiency notices from the portal.
 
-User-facing walkthrough: give the official URL and the configured AG charity registration
-number if present. If no AG charity number is configured, give the exact legal name from
-onboarding. Ask for plain-language status details; do not ask the user to type the field
-keys above.
+User-facing walkthrough: first say that public CA AG charity status is checked
+automatically by CA AG Registry Reports, and that the Registry Search Tool is only needed
+as a manual eligibility confirmation or fallback. Give the public Registry Search Tool URL,
+the official renewal login URL, the eligibility caveat, and the configured AG charity
+registration number if present. If no AG charity number is configured, give the exact
+legal name from onboarding. Tell the user that if there is no login option or the
+organization is not eligible for online renewal, they should report Online Renewal System
+access as unavailable and give the reason shown. Ask for plain-language status details; do
+not ask the user to type the field keys above.
 
 ## CA SOS bizfile
 

@@ -291,8 +291,8 @@ describe('formatDiscoveryReport', () => {
         {
           sourceId: 'ca-ag-online-filing',
           jurisdictionId: 'us-ca',
-          description: 'CA AG Online Filing',
-          accessUrl: 'https://rct.doj.ca.gov/',
+          description: 'CA AG Online Renewal System',
+          accessUrl: 'https://rct.doj.ca.gov/eGov/Home.aspx',
           accessMethod: 'playwright_readonly',
           automationAllowed: true,
           tosUrl: 'https://oag.ca.gov/privacy',
@@ -300,7 +300,7 @@ describe('formatDiscoveryReport', () => {
             status: 'auth_required',
             source_id: 'ca-ag-online-filing',
             message: 'Authentication is required.',
-            loginUrl: 'https://rct.doj.ca.gov/',
+            loginUrl: 'https://rct.doj.ca.gov/eGov/Home.aspx',
           },
         },
         {
@@ -324,10 +324,19 @@ describe('formatDiscoveryReport', () => {
 
     const actionSection = actionRequiredSection(rendered)
     expect(actionSection).toContain(
-      'Open CA Attorney General Online Filing: https://rct.doj.ca.gov/',
+      'Open CA Attorney General Online Renewal System: https://rct.doj.ca.gov/eGov/Home.aspx',
     )
     expect(actionSection).toContain(
-      'Open the charity dashboard for this AG charity registration number: CT1234567.',
+      'CA AG public charity status is already checked automatically from CA Attorney General Registry Reports. Use the Registry Search Tool at https://rct.doj.ca.gov/Verification/Web/Search.aspx?facility=Y only if you need to confirm online-renewal eligibility.',
+    )
+    expect(actionSection).toContain(
+      'Use the renewal login only if the Registry Search Tool shows the organization as Current or Current - Awaiting Reporting and an authorized agent has a User ID and Password, Account Code, or Registration Code.',
+    )
+    expect(actionSection).toContain(
+      'Open the renewal account for this AG charity registration number: CT1234567.',
+    )
+    expect(actionSection).toContain(
+      'If there is no login option or the organization is not eligible for online renewal, tell me that Online Renewal System access is unavailable and give the reason shown.',
     )
     expect(actionSection).toContain(
       'Open CA Franchise Tax Board MyFTB: https://www.ftb.ca.gov/myftb/',
@@ -398,8 +407,8 @@ describe('formatDiscoveryReport', () => {
         {
           sourceId: 'ca-ag-online-filing',
           jurisdictionId: 'us-ca',
-          description: 'CA AG Online Filing',
-          accessUrl: 'https://rct.doj.ca.gov/',
+          description: 'CA AG Online Renewal System',
+          accessUrl: 'https://rct.doj.ca.gov/eGov/Home.aspx',
           accessMethod: 'playwright_readonly',
           automationAllowed: true,
           tosUrl: 'https://oag.ca.gov/privacy',
@@ -448,7 +457,7 @@ describe('formatDiscoveryReport', () => {
       'Search for this exact legal name: Foo Foundation.',
     )
     expect(actionSection).toContain(
-      'Open the charity dashboard for this exact legal name: Foo Foundation.',
+      'Open the renewal account for this exact legal name: Foo Foundation.',
     )
     expect(actionSection).toContain(
       'Open the business account for this exact legal name: Foo Foundation.',
