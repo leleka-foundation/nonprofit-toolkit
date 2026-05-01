@@ -26,7 +26,15 @@ const ENTITY: Entity = {
 
 const IDENTIFIERS: EntityIdentifiers = {
   'us-federal': { ein: '12-3456789' },
-  'us-ca': { sosEntityNumber: 'C0123456' },
+  'us-ca': {
+    sosEntityNumber: 'C0123456',
+    agCharityNumber: 'CT1234567',
+    ftbEntityId: 'FTB-1234567',
+    ftbEntityName: 'Foo Foundation FTB',
+    cdtfaSellerPermitNumber: '202-822944',
+    cdtfaUseTaxAccountNumber: 'UT-123456',
+    cdtfaSpecialTaxAccountNumber: 'ST-123456',
+  },
 }
 
 const RUN: ComplianceDiscoveryRunRow = {
@@ -258,6 +266,249 @@ describe('getComplianceStatus', () => {
 })
 
 describe('formatComplianceStatusReport', () => {
+  it('guides the user through open manual and authenticated items', () => {
+    const caSosRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-sos-bizfile',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'manual_required',
+      error_message:
+        'California Secretary of State bizfile terms prohibit automated collection.',
+    }
+    const caCdtfaRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-cdtfa-permit-license-verification',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'manual_required',
+      error_message: 'Manual CDTFA verification required.',
+    }
+    const caAgRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-ag-online-filing',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'auth_required',
+      error_message: 'Authenticated session required.',
+    }
+    const caCdtfaAuthRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-cdtfa-online-services',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'auth_required',
+      error_message: 'Authenticated session required.',
+    }
+    const caFtbRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-ftb-entity-status-letter',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'manual_required',
+      error_message: 'Manual FTB status letter required.',
+    }
+    const caMyFtbRun: ComplianceDiscoveryRunRow = {
+      ...RUN,
+      source_id: 'ca-ftb-myftb',
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: 'auth_required',
+      error_message: 'Authenticated session required.',
+    }
+    const duplicateCaAgFinding: Finding = {
+      ...FINDING,
+      source_id: 'ca-ag-online-filing',
+      title:
+        'Authentication required: User-assisted CA AG Registry Online Renewal System dashboard review.',
+    }
+
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [
+        caSosRun,
+        caCdtfaRun,
+        caAgRun,
+        caCdtfaAuthRun,
+        caFtbRun,
+        caMyFtbRun,
+      ],
+      openFindings: [duplicateCaAgFinding],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain('## Next Steps')
+    expect(rendered).toContain('CA Secretary of State bizfile:')
+    expect(rendered).toContain(
+      'Open https://bizfileonline.sos.ca.gov/search/business and search SOS entity number C0123456.',
+    )
+    expect(rendered).toContain(
+      'CA CDTFA Permit, License, or Account Verification:',
+    )
+    expect(rendered).toContain(
+      'Search CDTFA account identifier 202-822944, UT-123456, ST-123456.',
+    )
+    expect(rendered).toContain('CA CDTFA Online Services:')
+    expect(rendered).toContain(
+      'Use CDTFA account identifier 202-822944, UT-123456, ST-123456 if the portal asks you to choose an account.',
+    )
+    expect(rendered).toContain('CA Franchise Tax Board Entity Status Letter:')
+    expect(rendered).toContain(
+      'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID FTB-1234567.',
+    )
+    expect(rendered).toContain('CA Franchise Tax Board MyFTB:')
+    expect(rendered).toContain(
+      'Open the business account for FTB entity ID FTB-1234567.',
+    )
+    expect(rendered).toContain('CA Attorney General Online Renewal System:')
+    expect(rendered).toContain(
+      'Public CA AG charity status is already checked from CA Attorney General Registry Reports.',
+    )
+    expect(rendered).toContain(
+      'Open https://rct.doj.ca.gov/eGov/Home.aspx only if you need renewal-dashboard details and an authorized agent can sign in.',
+    )
+    expect(rendered).toContain(
+      'Open the renewal account for AG charity registration number CT1234567.',
+    )
+    expect(
+      rendered.match(/CA Attorney General Online Renewal System:/g),
+    ).toHaveLength(1)
+    expect(rendered).not.toContain('online_filing_access')
+  })
+
+  it('falls back to legal names and generic guidance when source identifiers are absent', () => {
+    const withoutCaliforniaIdentifiers: EntityIdentifiers = {
+      'us-federal': { ein: '12-3456789' },
+    }
+    const failedRun = (
+      sourceId: string,
+      errorType: string,
+    ): ComplianceDiscoveryRunRow => ({
+      ...RUN,
+      source_id: sourceId,
+      jurisdiction_id: 'us-ca',
+      status: 'failed',
+      error_type: errorType,
+      error_message: 'Follow-up required.',
+    })
+
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: withoutCaliforniaIdentifiers,
+      latestRuns: [
+        failedRun('ca-ag-online-filing', 'auth_required'),
+        failedRun('ca-cdtfa-online-services', 'auth_required'),
+        failedRun('ca-cdtfa-permit-license-verification', 'manual_required'),
+        failedRun('ca-ftb-entity-status-letter', 'manual_required'),
+        failedRun('ca-ftb-myftb', 'auth_required'),
+        failedRun('ca-sos-bizfile', 'manual_required'),
+        failedRun('local-manual-source', 'manual_required'),
+      ],
+      openFindings: [],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain(
+      'Open https://bizfileonline.sos.ca.gov/search/business and search exact legal name Foo Foundation.',
+    )
+    expect(rendered).toContain(
+      'Open https://webapp.ftb.ca.gov/eletter/ and search exact legal name Foo Foundation.',
+    )
+    expect(rendered).toContain(
+      'Open the business account for exact legal name Foo Foundation.',
+    )
+    expect(rendered).toContain(
+      'Open the renewal account for exact legal name Foo Foundation.',
+    )
+    expect(rendered).toContain(
+      'No CDTFA account identifier is configured. If the organization has a seller permit, license, or account number, use that number; otherwise tell me no CDTFA account identifier is available.',
+    )
+    expect(rendered).toContain(
+      'No CDTFA account identifier is configured. If the portal shows a CDTFA-managed account for this organization, use that account; otherwise tell me no CDTFA-managed account is present.',
+    )
+    expect(rendered).toContain('local-manual-source:')
+    expect(rendered).toContain(
+      'Review the finding detail below, resolve the issue with the official source, then run compliance-discover again.',
+    )
+  })
+
+  it('uses the FTB entity name when an FTB entity ID is not configured', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: {
+        'us-federal': { ein: '12-3456789' },
+        'us-ca': {
+          sosEntityNumber: 'C0123456',
+          ftbEntityName: 'Foo Foundation FTB',
+        },
+      },
+      latestRuns: [
+        {
+          ...RUN,
+          source_id: 'ca-ftb-entity-status-letter',
+          jurisdiction_id: 'us-ca',
+          status: 'failed',
+          error_type: 'manual_required',
+          error_message: 'Manual FTB status letter required.',
+        },
+      ],
+      openFindings: [],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain(
+      'Open https://webapp.ftb.ca.gov/eletter/ and search exact legal name Foo Foundation FTB.',
+    )
+  })
+
+  it('renders generic next steps when attention is required without a source action', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [RUN],
+      openFindings: [
+        {
+          ...FINDING,
+          severity: 'info',
+          title: 'Informational finding only',
+        },
+      ],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain(
+      'Review the open findings below, resolve the underlying compliance issue, then run compliance-discover again to refresh stored status.',
+    )
+  })
+
+  it('does not render next steps when stored status is clear', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [RUN],
+      openFindings: [],
+      overall: 'clear',
+    })
+
+    expect(rendered).not.toContain('## Next Steps')
+  })
+
+  it('tells the user to run discovery when stored status is unknown', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [],
+      openFindings: [],
+      overall: 'unknown',
+    })
+
+    expect(rendered).toContain('## Next Steps')
+    expect(rendered).toContain(
+      'Run compliance-discover to create the first stored discovery snapshot.',
+    )
+  })
+
   it('renders stored runs and open findings', async () => {
     const result = await getComplianceStatus({
       entityAccessor: entityAccessor(ENTITY),

@@ -41,8 +41,15 @@ Use `formatComplianceStatusReport` from `src/compliance/skills/status.ts` for a 
 markdown report. The report includes:
 
 - Overall stored status: `clear`, `attention_required`, or `unknown`.
+- A `Next Steps` section when stored status is `attention_required` or `unknown`.
 - Latest stored discovery run per source.
 - Open findings currently stored in `compliance.findings`.
 
 If the status is `unknown`, tell the user to run `compliance-discover` because no stored
 discovery runs exist yet.
+
+If the status is `attention_required`, do not stop after listing open findings. Relay the
+`Next Steps` section and walk the user through the manual or authenticated items one at a
+time. Use the exact URLs and configured values printed by the report, and accept plain
+sentences or bullets from the user. Do not claim manual or authenticated evidence was
+persisted unless a dedicated ingestion path has actually run.
