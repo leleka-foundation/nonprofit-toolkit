@@ -378,6 +378,10 @@ function formatCaSosBizfileAction(report: ComplianceStatusReport): string[] {
 function formatCaFtbEntityStatusLetterAction(
   report: ComplianceStatusReport,
 ): string[] {
+  const storedIssue = formatStoredFtbEntityStatusIssue(report)
+  if (storedIssue.length > 0) {
+    return storedIssue
+  }
   return [
     `${formatSourceName('ca-ftb-entity-status-letter')}:`,
     `- Open https://webapp.ftb.ca.gov/eletter/ and ${formatFtbSearchInstruction(
@@ -385,6 +389,42 @@ function formatCaFtbEntityStatusLetterAction(
     )}.`,
     '- Tell me the FTB status, whether California exempt status is verified, and the letter date if shown.',
   ]
+}
+
+function formatStoredFtbEntityStatusIssue(
+  report: ComplianceStatusReport,
+): string[] {
+  const latestRun = report.latestRuns.find(
+    (run) =>
+      run.source_id === 'ca-ftb-entity-status-letter' &&
+      run.status === 'succeeded',
+  )
+  if (latestRun === undefined) {
+    return []
+  }
+  const payload = parsePayload(latestRun.payload)
+  const ftbStatus = readString(payload, 'ftb_status')
+  const exemptStatus = readString(payload, 'exempt_status_verified')
+  if (exemptStatus === null || isFtbExemptStatusVerified(exemptStatus)) {
+    return []
+  }
+  return [
+    `${formatSourceName('ca-ftb-entity-status-letter')}:`,
+    `- Stored FTB Entity Status Letter evidence says FTB status ${ftbStatus ?? 'not available in stored status'} and California exempt status ${exemptStatus}.`,
+    '- Do not re-check the Entity Status Letter unless you believe that stored evidence is wrong.',
+    '- Use CA Franchise Tax Board MyFTB or FTB support to determine whether California exemption should be registered or corrected, then record updated evidence.',
+  ]
+}
+
+function isFtbExemptStatusVerified(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  return (
+    normalized === 'yes' ||
+    normalized === 'true' ||
+    normalized === 'verified' ||
+    normalized === 'exempt' ||
+    normalized === 'exempt status verified'
+  )
 }
 
 function formatCaCdtfaPermitVerificationAction(

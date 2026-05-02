@@ -204,6 +204,32 @@ function makeManualSource(): Source {
   }
 }
 
+function makeFtbEntityStatusLetterSource(): Source {
+  return {
+    id: 'ca-ftb-entity-status-letter',
+    jurisdiction: 'us-ca',
+    kind: 'manual',
+    authRequired: false,
+    description:
+      'Manual California Franchise Tax Board Entity Status Letter verification.',
+    accessUrl: 'https://webapp.ftb.ca.gov/eletter/',
+    accessMethod: 'manual',
+    automationAllowed: false,
+    manualOnlyReason: 'Manual source.',
+    manualInstructions: ['Search the FTB status letter.'],
+    manualEvidenceFields: [
+      { key: 'ftb_status', label: 'FTB status', required: true },
+      {
+        key: 'exempt_status_verified',
+        label: 'Exempt status verified',
+        required: false,
+      },
+    ],
+    tosUrl: 'https://www.ftb.ca.gov/help/business/entity-status-letter.asp',
+    run: vi.fn<Source['run']>(),
+  }
+}
+
 function makeAutomatedSource(): Source {
   return {
     id: 'irs-teos',
@@ -610,6 +636,81 @@ describe('recordComplianceEvidence', () => {
     expect(recorder.findings[0]?.title).toBe(
       'CDTFA Online Services shows a nonzero balance',
     )
+  })
+
+  it('keeps a finding open when the FTB Entity Status Letter says exempt status is not verified', async () => {
+    const recorder = fakeRecorder()
+    const result = await recordComplianceEvidence(
+      baseArgs(
+        {
+          sourceId: 'ca-ftb-entity-status-letter',
+          evidence: {
+            ftb_status: 'ACTIVE',
+            exempt_status_verified: 'NOT EXEMPT',
+          },
+        },
+        [makeFtbEntityStatusLetterSource()],
+        recorder,
+      ),
+    )
+
+    expect(result.isOk()).toBe(true)
+    expect(recorder.findings).toHaveLength(1)
+    expect(recorder.findings[0]).toMatchObject({
+      source_id: 'ca-ftb-entity-status-letter',
+      title: 'California FTB exempt status is not verified',
+      evidence: {
+        code: 'ca.ftb.exempt_status_not_verified',
+        exemptStatusVerified: 'NOT EXEMPT',
+      },
+    })
+  })
+
+  it('does not emit a finding when the FTB Entity Status Letter verifies exempt status', async () => {
+    for (const exemptStatus of [
+      'yes',
+      'true',
+      'verified',
+      'exempt',
+      'exempt status verified',
+    ]) {
+      const recorder = fakeRecorder()
+      const result = await recordComplianceEvidence(
+        baseArgs(
+          {
+            sourceId: 'ca-ftb-entity-status-letter',
+            evidence: {
+              ftb_status: 'ACTIVE',
+              exempt_status_verified: exemptStatus,
+            },
+          },
+          [makeFtbEntityStatusLetterSource()],
+          recorder,
+        ),
+      )
+
+      expect(result.isOk()).toBe(true)
+      expect(recorder.findings).toEqual([])
+    }
+  })
+
+  it('does not emit a finding when optional FTB exempt status evidence is absent', async () => {
+    const recorder = fakeRecorder()
+    const result = await recordComplianceEvidence(
+      baseArgs(
+        {
+          sourceId: 'ca-ftb-entity-status-letter',
+          evidence: {
+            ftb_status: 'ACTIVE',
+          },
+        },
+        [makeFtbEntityStatusLetterSource()],
+        recorder,
+      ),
+    )
+
+    expect(result.isOk()).toBe(true)
+    expect(recorder.findings).toEqual([])
   })
 
   it('ignores blank optional CDTFA issue fields', async () => {

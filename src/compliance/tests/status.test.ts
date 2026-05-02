@@ -585,6 +585,160 @@ describe('formatComplianceStatusReport', () => {
     expect(rendered).toContain('- CA AG last renewal: 2025/07/15')
   })
 
+  it('does not ask the user to re-check FTB status letter when stored evidence already shows the issue', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [
+        {
+          ...RUN,
+          source_id: 'ca-ftb-entity-status-letter',
+          jurisdiction_id: 'us-ca',
+          status: 'succeeded',
+          payload: {
+            ftb_status: 'ACTIVE',
+            exempt_status_verified: 'NOT EXEMPT',
+          },
+        },
+      ],
+      openFindings: [
+        {
+          ...FINDING,
+          jurisdiction_id: 'us-ca',
+          source_id: 'ca-ftb-entity-status-letter',
+          title: 'California FTB exempt status is not verified',
+          evidence: {
+            code: 'ca.ftb.exempt_status_not_verified',
+            exemptStatusVerified: 'NOT EXEMPT',
+          },
+        },
+      ],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain('CA Franchise Tax Board Entity Status Letter:')
+    expect(rendered).toContain(
+      'Stored FTB Entity Status Letter evidence says FTB status ACTIVE and California exempt status NOT EXEMPT.',
+    )
+    expect(rendered).toContain(
+      'Do not re-check the Entity Status Letter unless you believe that stored evidence is wrong.',
+    )
+    expect(rendered).not.toContain('Open https://webapp.ftb.ca.gov/eletter/')
+  })
+
+  it('uses normal FTB status-letter instructions when stored evidence verifies exempt status', () => {
+    for (const exemptStatus of [
+      'yes',
+      'true',
+      'verified',
+      'exempt',
+      'exempt status verified',
+    ]) {
+      const rendered = formatComplianceStatusReport({
+        entity: ENTITY,
+        identifiers: IDENTIFIERS,
+        latestRuns: [
+          {
+            ...RUN,
+            source_id: 'ca-ftb-entity-status-letter',
+            jurisdiction_id: 'us-ca',
+            status: 'succeeded',
+            payload: {
+              ftb_status: 'ACTIVE',
+              exempt_status_verified: exemptStatus,
+            },
+          },
+        ],
+        openFindings: [
+          {
+            ...FINDING,
+            jurisdiction_id: 'us-ca',
+            source_id: 'ca-ftb-entity-status-letter',
+            title: 'Manual FTB status letter review is stale.',
+          },
+        ],
+        overall: 'attention_required',
+      })
+
+      expect(rendered).toContain(
+        'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID FTB-1234567.',
+      )
+      expect(rendered).not.toContain(
+        'Stored FTB Entity Status Letter evidence says',
+      )
+    }
+  })
+
+  it('uses normal FTB status-letter instructions when stored evidence omits exempt status', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [
+        {
+          ...RUN,
+          source_id: 'ca-ftb-entity-status-letter',
+          jurisdiction_id: 'us-ca',
+          status: 'succeeded',
+          payload: {
+            ftb_status: 'ACTIVE',
+          },
+        },
+      ],
+      openFindings: [
+        {
+          ...FINDING,
+          jurisdiction_id: 'us-ca',
+          source_id: 'ca-ftb-entity-status-letter',
+          title: 'Manual FTB status letter review is stale.',
+        },
+      ],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain(
+      'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID FTB-1234567.',
+    )
+    expect(rendered).not.toContain(
+      'Stored FTB Entity Status Letter evidence says',
+    )
+  })
+
+  it('states when stored FTB issue evidence does not include FTB status', () => {
+    const rendered = formatComplianceStatusReport({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      latestRuns: [
+        {
+          ...RUN,
+          source_id: 'ca-ftb-entity-status-letter',
+          jurisdiction_id: 'us-ca',
+          status: 'succeeded',
+          payload: {
+            exempt_status_verified: 'NOT EXEMPT',
+          },
+        },
+      ],
+      openFindings: [
+        {
+          ...FINDING,
+          jurisdiction_id: 'us-ca',
+          source_id: 'ca-ftb-entity-status-letter',
+          title: 'California FTB exempt status is not verified',
+          evidence: {
+            code: 'ca.ftb.exempt_status_not_verified',
+            exemptStatusVerified: 'NOT EXEMPT',
+          },
+        },
+      ],
+      overall: 'attention_required',
+    })
+
+    expect(rendered).toContain(
+      'Stored FTB Entity Status Letter evidence says FTB status not available in stored status and California exempt status NOT EXEMPT.',
+    )
+    expect(rendered).not.toContain('Open https://webapp.ftb.ca.gov/eletter/')
+  })
+
   it('ignores malformed stored JSON payloads in organization context', () => {
     const rendered = formatComplianceStatusReport({
       entity: ENTITY,

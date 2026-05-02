@@ -317,10 +317,18 @@ interface DeriveEvidenceFindingsArgs {
 function deriveEvidenceFindings(
   args: DeriveEvidenceFindingsArgs,
 ): readonly Finding[] {
-  if (args.source.id !== 'ca-cdtfa-online-services') {
-    return []
+  if (args.source.id === 'ca-cdtfa-online-services') {
+    return deriveCdtfaOnlineServicesFindings(args)
   }
+  if (args.source.id === 'ca-ftb-entity-status-letter') {
+    return deriveFtbEntityStatusLetterFindings(args)
+  }
+  return []
+}
 
+function deriveCdtfaOnlineServicesFindings(
+  args: DeriveEvidenceFindingsArgs,
+): readonly Finding[] {
   const drafts: FindingDraft[] = []
   const filingObligations = readEvidenceText(
     args.evidence,
@@ -382,6 +390,33 @@ function deriveEvidenceFindings(
   return drafts.map((draft) => toFinding(draft, args.openedAt))
 }
 
+function deriveFtbEntityStatusLetterFindings(
+  args: DeriveEvidenceFindingsArgs,
+): readonly Finding[] {
+  const exemptStatus = readEvidenceText(args.evidence, 'exempt_status_verified')
+  if (exemptStatus === null || isAffirmativeClearText(exemptStatus)) {
+    return []
+  }
+  return [
+    toFinding(
+      {
+        code: 'ca.ftb.exempt_status_not_verified',
+        jurisdictionId: args.source.jurisdiction,
+        sourceId: args.source.id,
+        severity: 'warn',
+        title: 'California FTB exempt status is not verified',
+        detail:
+          'The manual California FTB Entity Status Letter evidence did not verify California exempt status.',
+        evidence: {
+          code: 'ca.ftb.exempt_status_not_verified',
+          exemptStatusVerified: exemptStatus,
+        },
+      },
+      args.openedAt,
+    ),
+  ]
+}
+
 function readEvidenceText(
   evidence: Record<string, unknown>,
   key: string,
@@ -426,6 +461,17 @@ function isClearText(text: string): boolean {
     normalized === '0' ||
     normalized === 'zero' ||
     normalized.startsWith('no ')
+  )
+}
+
+function isAffirmativeClearText(text: string): boolean {
+  const normalized = text.trim().toLowerCase()
+  return (
+    normalized === 'yes' ||
+    normalized === 'true' ||
+    normalized === 'verified' ||
+    normalized === 'exempt' ||
+    normalized === 'exempt status verified'
   )
 }
 
