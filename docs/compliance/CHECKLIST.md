@@ -408,6 +408,11 @@ prints exact evidence instructions instead of guessing or mutating portal state.
       change needed; `compliance-status` intentionally reports stored failed-run rows
       without network discovery, and detailed `AUTH` evidence remains in
       `compliance-discover`.
+- [x] Add a tested evidence-ingestion path so user-provided manual/authenticated
+      answers are recorded as successful source-run history, and current-state views
+      stop surfacing stale `source.auth_required`, `source.manual_required`,
+      `source.policy_blocked`, or `source.failed` gap findings once the latest run for
+      that source succeeds.
 
 ### California Phase 3 sources (TDD)
 
@@ -465,6 +470,10 @@ prints exact evidence instructions instead of guessing or mutating portal state.
 - [x] Run `compliance-status` and verify stored Phase 3 outcomes are visible without
       network discovery. Verified latest stored state reports 9 runs with overall
       status `attention_required`.
+- [x] Record user-provided CDTFA Online Services evidence through
+      `compliance-record-evidence` and rerun `compliance-status` to confirm the CDTFA
+      authenticated source is no longer an open action when the latest stored run is
+      successful.
 
 ### Acceptance gates
 

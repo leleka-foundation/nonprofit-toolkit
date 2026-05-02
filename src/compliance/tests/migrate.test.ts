@@ -262,9 +262,11 @@ describe('runMigration', () => {
     expect(viewReq?.query).toMatch(/detail/i)
     expect(viewReq?.query).toMatch(/TO_JSON_STRING\(evidence\)/i)
     expect(viewReq?.query).toMatch(/NOT COALESCE\(/i)
-    expect(viewReq?.query).toMatch(
-      /JSON_VALUE\(f\.evidence, '\$\.code'\) = 'source\.failed'/i,
-    )
+    expect(viewReq?.query).toMatch(/JSON_VALUE\(f\.evidence, '\$\.code'\) IN/i)
+    expect(viewReq?.query).toMatch(/'source\.failed'/i)
+    expect(viewReq?.query).toMatch(/'source\.auth_required'/i)
+    expect(viewReq?.query).toMatch(/'source\.manual_required'/i)
+    expect(viewReq?.query).toMatch(/'source\.policy_blocked'/i)
     expect(viewReq?.query).toMatch(/f\.source_id = 'ca-ag-online-filing'/i)
     expect(viewReq?.query).not.toMatch(/PARTITION BY\s+finding_id/i)
   })

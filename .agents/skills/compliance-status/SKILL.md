@@ -8,8 +8,10 @@ description: >
 
 # Compliance Status
 
-Reads stored compliance state only. It does not run public-source discovery, fetch IRS or
-California data, open browsers, submit forms, or write new source-run rows.
+The initial status read is stored-state only. It does not run public-source discovery,
+fetch IRS or California data, open browsers, submit forms, or write new source-run rows.
+If the user then provides the manual or authenticated evidence requested by the report,
+use the evidence-ingestion path below to record that answer as a new source-run row.
 
 ## Pre-flight
 
@@ -34,6 +36,35 @@ bun scripts/compliance-status.ts --project <gcp-project-id>
 ```
 
 Add `--json` for the full structured report.
+
+## Recording User Evidence
+
+When the user answers a manual or authenticated walkthrough, map their plain-language
+answer to the source's evidence field keys and run:
+
+```bash
+bun scripts/compliance-record-evidence.ts --project <gcp-project-id> --source <source-id> --evidence-file <json-file>
+```
+
+The JSON file can be either a raw object of evidence fields or an object with
+`observedAt` and `evidence`. Example for CA CDTFA Online Services:
+
+```json
+{
+  "observedAt": "2026-05-02T00:00:00.000Z",
+  "evidence": {
+    "cdtfa_accounts_present": true,
+    "account_statuses": "Account exists; balance 0.",
+    "balance": "0",
+    "open_filing_obligations": "none",
+    "notices_or_billings": "none",
+    "reviewed_at": "2026-05-02"
+  }
+}
+```
+
+After recording evidence, rerun `compliance-status` and continue with the next open item.
+Do not ask the user to provide internal field names; translate their answer yourself.
 
 ## Report to the user
 
@@ -69,5 +100,6 @@ due date, and last-renewal date when stored. If a value is missing, say that it 
 configured or not available in stored status. Do not make the user infer identifiers from
 internal field names.
 
-Do not claim manual or authenticated evidence was persisted unless a dedicated ingestion
-path has actually run.
+Do not claim manual or authenticated evidence was persisted unless
+`compliance-record-evidence` or the equivalent `recordComplianceEvidenceProduction`
+function has actually run successfully.

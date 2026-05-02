@@ -267,6 +267,10 @@ refresh this before coding and capture final URLs in source definitions.
 - Runner and report behavior:
   - authenticated sources without an available session return detailed `AUTH`
     outcomes and write discovery-run history
+  - user-provided manual/authenticated answers can be ingested as successful
+    source-run history without overwriting prior raw runs
+  - current-state views hide stale source-gap findings once the latest run for the
+    same source succeeds, while the raw findings and discovery-run tables keep history
   - reports render exact login/setup steps, evidence fields, and forbidden actions
   - derived findings include stable auth-required findings until evidence or an
     authenticated read-only adapter resolves the gap, except optional CA AG Online
@@ -313,7 +317,10 @@ refresh this before coding and capture final URLs in source definitions.
    Online Services, MyFTB, and CA AG Online Filing Service sources with tests.
 5. **Skills and references.** Update `compliance-discover` and reference files so
    portal-specific details live under `references/`, not in the main skill file.
-6. **Live verification and PR.** Run migrations/discovery/status against the
+6. **Evidence ingestion.** Add the command and backend that record user-provided
+   manual/authenticated evidence as successful source-run history, and keep raw
+   history in tables while current-state views return the latest actionable gaps.
+7. **Live verification and PR.** Run migrations/discovery/status against the
    onboarded nonprofit, confirm persisted outcomes, run all gates, push, open a PR,
    and address CI/review feedback until clean.
 

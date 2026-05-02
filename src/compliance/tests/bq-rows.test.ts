@@ -46,6 +46,17 @@ describe('currentOpenFindingsViewQuery', () => {
 
     expect(query).toContain("f.source_id = 'ca-ag-online-filing'")
   })
+
+  it('closes stale source-gap findings when the latest source run succeeded', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain("JSON_VALUE(f.evidence, '$.code') IN")
+    expect(query).toContain("'source.failed'")
+    expect(query).toContain("'source.auth_required'")
+    expect(query).toContain("'source.manual_required'")
+    expect(query).toContain("'source.policy_blocked'")
+    expect(query).toContain("r.status = 'succeeded'")
+  })
 })
 
 describe('buildTableSchema', () => {

@@ -54,13 +54,15 @@ The jurisdiction is California.
 The status date shown is 2026-04-29.
 ```
 
-If the user provides manual evidence, summarize what they gave and identify any missing
-required fields. Do not claim the evidence has been persisted unless a dedicated
-manual-evidence ingestion path exists and has run successfully.
+If the user provides manual evidence, summarize what they gave, identify any missing
+required fields, map the answer to source evidence keys yourself, and run
+`bun scripts/compliance-record-evidence.ts --project <gcp-project-id> --source <source-id>
+--evidence-file <json-file>` when all required fields are present.
 
 For auth-required evidence, use the same discipline: summarize what the user provided,
-identify missing required fields, and do not imply that the skill logged in or persisted
-anything unless a dedicated authenticated/evidence-ingestion path has actually run.
+identify missing required fields, and do not imply that the skill logged in. Only claim
+the evidence was persisted after `compliance-record-evidence` or the equivalent
+`recordComplianceEvidenceProduction` function succeeds.
 
 Never ask the user to paste portal passwords into chat. If a source requires a user-owned
 account, tell the user to sign in themselves and report only the visible status or account

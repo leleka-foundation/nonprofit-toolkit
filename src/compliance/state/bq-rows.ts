@@ -252,7 +252,12 @@ export function currentOpenFindingsViewQuery(
       AND f.status = 'open'
       AND NOT COALESCE(
         (
-          JSON_VALUE(f.evidence, '$.code') = 'source.failed'
+          JSON_VALUE(f.evidence, '$.code') IN (
+            'source.failed',
+            'source.auth_required',
+            'source.manual_required',
+            'source.policy_blocked'
+          )
           AND r.status = 'succeeded'
         )
         OR f.source_id = 'ca-ag-online-filing',

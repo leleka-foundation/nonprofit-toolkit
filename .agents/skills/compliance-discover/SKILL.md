@@ -103,7 +103,10 @@ When an actionable source is not `OK`, do not summarize it as compliant. For
 manual-required and auth-required sources, keep the instructions concise, clear, and
 written as full sentences. If the user returns manual or authenticated evidence, do not
 claim it was persisted unless a dedicated evidence-ingestion path has been implemented and
-successfully run.
+successfully run. The current ingestion path is
+`bun scripts/compliance-record-evidence.ts --project <gcp-project-id> --source <source-id>
+--evidence-file <json-file>`; map the user's plain-language answer into the source's
+evidence field keys yourself before running it.
 
 ## Failure modes
 
