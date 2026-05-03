@@ -189,7 +189,6 @@ function formatNextSteps(report: ComplianceStatusReport): string[] {
 function formatOrganizationContext(report: ComplianceStatusReport): string[] {
   const caIdentifiers = report.identifiers['us-ca']
   const caAgCharityNumber = getCaAgCharityNumber(report)
-  const ftbEntityId = getFtbEntityId(report)
   const ftbEntityName = getConfiguredFtbEntityName(report)
   return [
     `- Legal entity name: ${report.entity.legal_name}`,
@@ -199,7 +198,7 @@ function formatOrganizationContext(report: ComplianceStatusReport): string[] {
     `- Mailing address: ${formatMailingAddress(report.entity)}`,
     `- California SOS entity number: ${caIdentifiers?.sosEntityNumber ?? 'not configured'}`,
     `- California AG charity registration number: ${caAgCharityNumber ?? 'not configured'}`,
-    `- FTB entity ID: ${ftbEntityId ?? 'not configured'}`,
+    `- FTB entity ID: ${formatFtbEntityIdForContext(report)}`,
     `- FTB entity name: ${ftbEntityName ?? 'not configured'}`,
     `- CDTFA account identifiers: ${formatConfiguredList(
       listCdtfaAccountIdentifiers(report),
@@ -235,8 +234,27 @@ function getCaAgCharityNumber(report: ComplianceStatusReport): string | null {
 function getFtbEntityId(report: ComplianceStatusReport): string | null {
   return (
     report.identifiers['us-ca']?.ftbEntityId ??
-    readString(findPayload(report, 'ca-ftb-entity-status-letter'), 'entity_id')
+    readString(
+      findPayload(report, 'ca-ftb-entity-status-letter'),
+      'entity_id',
+    ) ??
+    report.identifiers['us-ca']?.sosEntityNumber ??
+    null
   )
+}
+
+function formatFtbEntityIdForContext(report: ComplianceStatusReport): string {
+  const configuredOrObserved =
+    report.identifiers['us-ca']?.ftbEntityId ??
+    readString(findPayload(report, 'ca-ftb-entity-status-letter'), 'entity_id')
+  if (configuredOrObserved !== undefined && configuredOrObserved !== null) {
+    return configuredOrObserved
+  }
+  const sosEntityNumber = report.identifiers['us-ca']?.sosEntityNumber
+  if (sosEntityNumber !== undefined) {
+    return `${sosEntityNumber} (using California SOS entity number)`
+  }
+  return 'not configured'
 }
 
 function getConfiguredFtbEntityName(
@@ -431,9 +449,9 @@ function formatStoredFtbEntityStatusIssue(
   }
   return [
     `${formatSourceName('ca-ftb-entity-status-letter')}:`,
-    `- Stored FTB Entity Status Letter evidence says FTB status ${ftbStatus ?? 'not available in stored status'} and California exempt status ${exemptStatus}.`,
-    '- Do not re-check the Entity Status Letter unless you believe that stored evidence is wrong.',
-    '- Use CA Franchise Tax Board MyFTB or FTB support to determine whether California exemption should be registered or corrected, then record updated evidence.',
+    `- Latest public FTB Entity Status Letter says FTB status ${ftbStatus ?? 'not available in stored status'} and California exempt status ${exemptStatus}.`,
+    '- The public Entity Status Letter check is automated; run compliance-discover again whenever you want to refresh this stored status.',
+    '- Use CA Franchise Tax Board MyFTB or FTB support to determine whether California exemption should be registered or corrected. After FTB updates the account, run compliance-discover again to verify the new Entity Status Letter result.',
   ]
 }
 

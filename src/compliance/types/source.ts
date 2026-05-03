@@ -214,12 +214,54 @@ export type FetchImpl = (
   init?: RequestInit,
 ) => Promise<Response>
 
+export interface BrowserLocator {
+  filter(options: { readonly hasText: string | RegExp }): BrowserLocator
+  first(): BrowserLocator
+  count(): Promise<number>
+  click(): Promise<unknown>
+  innerText(): Promise<string>
+}
+
+export interface BrowserPage {
+  setDefaultTimeout(timeoutMs: number): void
+  goto(
+    url: string,
+    options?: {
+      readonly waitUntil?: 'load' | 'domcontentloaded' | 'networkidle'
+      readonly timeout?: number
+    },
+  ): Promise<unknown>
+  waitForSelector(
+    selector: string,
+    options?: { readonly timeout?: number },
+  ): Promise<unknown>
+  fill(selector: string, value: string): Promise<unknown>
+  click(selector: string): Promise<unknown>
+  waitForLoadState(
+    state?: 'load' | 'domcontentloaded' | 'networkidle',
+    options?: { readonly timeout?: number },
+  ): Promise<unknown>
+  locator(selector: string): BrowserLocator
+}
+
+export interface BrowserPageSession {
+  readonly page: BrowserPage
+  readonly close: () => Promise<void>
+}
+
+export type BrowserPageFactory = () => ResultAsync<
+  BrowserPageSession,
+  SourceError
+>
+
 /**
  * Context passed to a source's `run` function.
  *
  * The runner provides:
  *   - `now`         clock — tests inject a fixed time
  *   - `fetch`       HTTP client — tests inject a fake
+ *   - `browserPageFactory` optional browser-page factory for public pages that
+ *                          require a real browser but no user auth
  *   - `downloadCache` optional shared cache for official bulk downloads
  *   - `identifiers` per-jurisdiction IDs (EIN, SOS number, etc.) — the
  *                   orchestrator reads these from Secret Manager once before
@@ -229,6 +271,7 @@ export type FetchImpl = (
 export interface SourceContext {
   readonly now: () => Date
   readonly fetch: FetchImpl
+  readonly browserPageFactory?: BrowserPageFactory
   readonly downloadCache?: DownloadCacheStore
   readonly identifiers: EntityIdentifiers
 }

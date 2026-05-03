@@ -102,28 +102,27 @@ plain-language status details; do not ask the user to type the field keys above.
 
 Source id: `us-ca/ca-ftb-entity-status-letter`
 
-- Access method: manual.
-- Why manual: Phase 2 treats the FTB Entity Status Letter form as manual pending a
-  narrower source-policy review for automated read-only form use.
+- Access method: automated public browser check. No authentication is required.
 - Official URL: `https://webapp.ftb.ca.gov/eletter/`
 - Reference URL: `https://www.ftb.ca.gov/help/business/entity-status-letter.asp`
 
-Manual steps:
+Automated behavior:
 
 1. Open the FTB Entity Status Letter lookup.
-2. Search by FTB entity id if configured; otherwise search by exact legal name. The report
-   must print whichever value is configured.
-3. Record whether the entity is in good standing with FTB and whether exempt status is
-   verified.
+2. Search by FTB entity ID if configured; otherwise search by exact legal name.
+3. Open the public result summary and record entity ID, entity name, address, FTB entity
+   status, and California exempt status.
 
-Evidence fields:
+Finding behavior:
 
-- `ftb_status` (required): FTB status
-- `exempt_status_verified` (optional): Exempt status verified
-- `letter_date` (optional): Letter date
+- If the source returns `NOT EXEMPT` or any other non-verified exempt status, treat that
+  as an open California FTB issue.
+- If the source later returns `EXEMPT`, the current findings view suppresses the stale
+  prior FTB exempt-status issue while keeping all raw history.
 
-User-facing walkthrough: give the official URL and the actual FTB entity ID or legal name.
-Ask for plain-language status details; do not ask the user to type the field keys above.
+User-facing guidance: do not ask the user to re-check this page manually. Run
+`compliance-discover` to refresh it. If the latest result is `NOT EXEMPT`, guide the user
+to fix California exemption through MyFTB, FTB support, or Form 3500A as appropriate.
 
 ## MyFTB
 

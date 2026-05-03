@@ -295,7 +295,7 @@ function formatOrganizationContext(report: DiscoveryReport): string[] {
     `- Mailing address: ${formatMailingAddress(report)}`,
     `- California SOS entity number: ${caIdentifiers?.sosEntityNumber ?? 'not configured'}`,
     `- California AG charity registration number: ${getCaAgCharityNumber(report) ?? 'not configured'}`,
-    `- FTB entity ID: ${caIdentifiers?.ftbEntityId ?? 'not configured'}`,
+    `- FTB entity ID: ${formatFtbEntityIdForContext(report)}`,
     `- FTB entity name: ${caIdentifiers?.ftbEntityName ?? 'not configured'}`,
     `- CDTFA account identifiers: ${formatConfiguredList(
       listCdtfaAccountIdentifiers(report),
@@ -339,6 +339,38 @@ function getCaAgCharityNumber(report: DiscoveryReport): string | null {
     readString(
       findSuccessfulPayload(report, 'ca-ag-registry'),
       'stateCharityRegistrationNumber',
+    )
+  )
+}
+
+function formatFtbEntityIdForContext(report: DiscoveryReport): string {
+  const configuredOrObserved = getConfiguredOrObservedFtbEntityId(report)
+  if (configuredOrObserved !== null) {
+    return configuredOrObserved
+  }
+  const sosEntityNumber = report.identifiers['us-ca']?.sosEntityNumber
+  if (sosEntityNumber !== undefined) {
+    return `${sosEntityNumber} (using California SOS entity number)`
+  }
+  return 'not configured'
+}
+
+function getFtbEntityIdForLookup(report: DiscoveryReport): string | null {
+  return (
+    getConfiguredOrObservedFtbEntityId(report) ??
+    report.identifiers['us-ca']?.sosEntityNumber ??
+    null
+  )
+}
+
+function getConfiguredOrObservedFtbEntityId(
+  report: DiscoveryReport,
+): string | null {
+  return (
+    report.identifiers['us-ca']?.ftbEntityId ??
+    readString(
+      findSuccessfulPayload(report, 'ca-ftb-entity-status-letter'),
+      'entity_id',
     )
   )
 }
@@ -572,17 +604,17 @@ function formatAuthOpenStep(
 }
 
 function formatFtbSearchStep(report: DiscoveryReport): string {
-  const caIdentifiers = report.identifiers['us-ca']
-  if (caIdentifiers?.ftbEntityId !== undefined) {
-    return `Search for this FTB entity ID: ${caIdentifiers.ftbEntityId}.`
+  const ftbEntityId = getFtbEntityIdForLookup(report)
+  if (ftbEntityId !== null) {
+    return `Search for this FTB entity ID: ${ftbEntityId}.`
   }
   return `Search for this exact legal name: ${formatFtbEntityName(report)}.`
 }
 
 function formatFtbBusinessAccountStep(report: DiscoveryReport): string {
-  const caIdentifiers = report.identifiers['us-ca']
-  if (caIdentifiers?.ftbEntityId !== undefined) {
-    return `Open the business account for this FTB entity ID: ${caIdentifiers.ftbEntityId}.`
+  const ftbEntityId = getFtbEntityIdForLookup(report)
+  if (ftbEntityId !== null) {
+    return `Open the business account for this FTB entity ID: ${ftbEntityId}.`
   }
   return `Open the business account for this exact legal name: ${formatFtbEntityName(
     report,

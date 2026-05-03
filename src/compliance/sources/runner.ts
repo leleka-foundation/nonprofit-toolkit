@@ -67,8 +67,8 @@ export function runSource(
 ): ResultAsync<SourceRunOutput, SourceError> {
   const { source, entity, ctx, recorder } = args
 
-  // Phase 1 only knows how to dispatch `kind: 'api'` sources. `playwright`
-  // sources arrive in Phase 2, `manual` sources never run automatically.
+  // The legacy compatibility wrapper only dispatches `kind: 'api'` sources.
+  // Use `runSourceOutcome` for Phase 3 public browser sources.
   // Refuse loudly so the missing kind is visible (the project rule is to fail
   // loudly rather than silently no-op).
   if (source.kind !== 'api') {
@@ -119,7 +119,7 @@ export function runSourceOutcome(
     return finishAuthRequired({ source, ctx, recorder })
   }
 
-  if (source.kind !== 'api') {
+  if (!isRunnableAutomatedKind(source.kind)) {
     return finishFailureOutcome({
       sourceError: {
         type: 'tos',
@@ -149,6 +149,10 @@ export function runSourceOutcome(
     .orElse((sourceError) =>
       finishFailureOutcome({ sourceError, startedAt, source, ctx, recorder }),
     )
+}
+
+function isRunnableAutomatedKind(kind: Source['kind']): boolean {
+  return kind === 'api' || kind === 'playwright'
 }
 
 interface FinishSuccessArgs {

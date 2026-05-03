@@ -57,6 +57,31 @@ function output(payload: Record<string, unknown>): SuccessOutcome['output'] {
   }
 }
 
+function ftbOutput(payload: Record<string, unknown>): SuccessOutcome['output'] {
+  return {
+    record: {
+      record_id: '550e8400-e29b-41d4-a716-446655440000',
+      source_id: 'ca-ftb-entity-status-letter',
+      fetched_at: '2026-05-03T00:00:00.000Z',
+      payload,
+    },
+    findings: [],
+  }
+}
+
+function ftbRun(payload: Record<string, unknown>): DiscoveryRun {
+  return {
+    ...SOURCE,
+    sourceId: 'ca-ftb-entity-status-letter',
+    description: 'CA FTB Entity Status Letter',
+    accessUrl: 'https://webapp.ftb.ca.gov/eletter/',
+    outcome: {
+      status: 'success',
+      output: ftbOutput(payload),
+    },
+  }
+}
+
 describe('deriveComplianceFindings', () => {
   it('creates a manual-required finding with a stable id', () => {
     const run: DiscoveryRun = {
@@ -709,5 +734,87 @@ describe('deriveComplianceFindings', () => {
       title: 'CA AG Registry row has no last-renewal date',
       evidence: { code: 'ca.ag_last_renewal_missing' },
     })
+  })
+
+  it('flags automated FTB Entity Status Letter payloads that do not verify California exemption', () => {
+    const findings = deriveComplianceFindings({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      runs: [
+        ftbRun({
+          matchStatus: 'found',
+          entity_id: '6423690',
+          entity_name: 'FOO FOUNDATION',
+          ftb_status: 'ACTIVE',
+          exempt_status_verified: 'NOT EXEMPT',
+        }),
+      ],
+      now: () => new Date('2026-05-03T12:00:00.000Z'),
+    })
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({
+      jurisdiction_id: 'us-ca',
+      source_id: 'ca-ftb-entity-status-letter',
+      severity: 'warn',
+      title: 'California FTB exempt status is not verified',
+      detail:
+        'The public California FTB Entity Status Letter does not verify California exempt status.',
+      evidence: {
+        code: 'ca.ftb.exempt_status_not_verified',
+        exemptStatusVerified: 'NOT EXEMPT',
+      },
+    })
+  })
+
+  it('does not flag automated FTB Entity Status Letter payloads with verified exemption', () => {
+    const findings = deriveComplianceFindings({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      runs: [
+        ftbRun({
+          matchStatus: 'found',
+          entity_id: '6423690',
+          entity_name: 'FOO FOUNDATION',
+          ftb_status: 'ACTIVE',
+          exempt_status_verified: 'EXEMPT',
+        }),
+      ],
+      now: () => new Date('2026-05-03T12:00:00.000Z'),
+    })
+
+    expect(findings).toEqual([])
+  })
+
+  it('flags automated FTB Entity Status Letter not-found results', () => {
+    const findings = deriveComplianceFindings({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      runs: [
+        ftbRun({
+          matchStatus: 'not_found',
+          search: { field: 'Entity ID', value: '6423690' },
+        }),
+      ],
+      now: () => new Date('2026-05-03T12:00:00.000Z'),
+    })
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({
+      severity: 'warn',
+      title: 'Entity not found in CA FTB Entity Status Letter',
+      evidence: { code: 'ca.ftb.entity_status_letter_not_found' },
+    })
+  })
+
+  it('ignores malformed FTB Entity Status Letter payloads instead of inventing findings', () => {
+    const findings = deriveComplianceFindings({
+      entity: ENTITY,
+      identifiers: IDENTIFIERS,
+      runs: [ftbRun({ unexpected: true })],
+      now: () => new Date('2026-05-03T12:00:00.000Z'),
+    })
+
+    expect(findings).toEqual([])
   })
 })

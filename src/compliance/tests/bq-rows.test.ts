@@ -57,6 +57,24 @@ describe('currentOpenFindingsViewQuery', () => {
     expect(query).toContain("'source.policy_blocked'")
     expect(query).toContain("r.status = 'succeeded'")
   })
+
+  it('closes stale FTB exempt-status findings when the latest FTB payload verifies exemption', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain("'ca.ftb.exempt_status_not_verified'")
+    expect(query).toContain("JSON_VALUE(r.payload, '$.exempt_status_verified')")
+    expect(query).toContain("'EXEMPT'")
+    expect(query).toContain("'VERIFIED'")
+  })
+
+  it('deduplicates repeated current findings by semantic finding code instead of full evidence history', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain(
+      "COALESCE(JSON_VALUE(f.evidence, '$.code'), f.title)",
+    )
+    expect(query).not.toContain('TO_JSON_STRING(evidence)')
+  })
 })
 
 describe('buildTableSchema', () => {

@@ -28,6 +28,12 @@ const CaAgPayloadSchema = z.object({
   lastRenewal: z.string().optional(),
 })
 
+const CaFtbEntityStatusLetterPayloadSchema = z.object({
+  matchStatus: z.enum(['found', 'not_found']),
+  ftb_status: z.string().optional(),
+  exempt_status_verified: z.string().optional(),
+})
+
 export interface DeriveComplianceFindingsArgs {
   readonly entity: Entity
   readonly identifiers: EntityIdentifiers
@@ -132,6 +138,12 @@ function deriveRunFindings(
   }
   if (outcome.status === 'success' && run.sourceId === 'ca-ag-registry') {
     return deriveCaAgFindings(entity, { ...run, outcome })
+  }
+  if (
+    outcome.status === 'success' &&
+    run.sourceId === 'ca-ftb-entity-status-letter'
+  ) {
+    return deriveCaFtbEntityStatusLetterFindings({ ...run, outcome })
   }
   return []
 }
@@ -365,6 +377,61 @@ function deriveCaAgFindings(
     )
   }
   return findings
+}
+
+function deriveCaFtbEntityStatusLetterFindings(
+  run: SuccessDiscoveryRun,
+): readonly FindingDraft[] {
+  const parsed = CaFtbEntityStatusLetterPayloadSchema.safeParse(
+    run.outcome.output.record.payload,
+  )
+  if (!parsed.success) {
+    return []
+  }
+  if (parsed.data.matchStatus === 'not_found') {
+    return [
+      {
+        code: 'ca.ftb.entity_status_letter_not_found',
+        jurisdictionId: run.jurisdictionId,
+        sourceId: run.sourceId,
+        severity: 'warn',
+        title: 'Entity not found in CA FTB Entity Status Letter',
+        detail:
+          'The public California FTB Entity Status Letter lookup did not return the configured entity.',
+        evidence: { code: 'ca.ftb.entity_status_letter_not_found' },
+      },
+    ]
+  }
+  const exemptStatus = parsed.data.exempt_status_verified
+  if (exemptStatus === undefined || isFtbExemptStatusVerified(exemptStatus)) {
+    return []
+  }
+  return [
+    {
+      code: 'ca.ftb.exempt_status_not_verified',
+      jurisdictionId: run.jurisdictionId,
+      sourceId: run.sourceId,
+      severity: 'warn',
+      title: 'California FTB exempt status is not verified',
+      detail:
+        'The public California FTB Entity Status Letter does not verify California exempt status.',
+      evidence: {
+        code: 'ca.ftb.exempt_status_not_verified',
+        exemptStatusVerified: exemptStatus,
+      },
+    },
+  ]
+}
+
+function isFtbExemptStatusVerified(value: string): boolean {
+  const normalized = value.trim().toLocaleLowerCase()
+  return (
+    normalized === 'yes' ||
+    normalized === 'true' ||
+    normalized === 'verified' ||
+    normalized === 'exempt' ||
+    normalized === 'exempt status verified'
+  )
 }
 
 function nameMismatchFinding(

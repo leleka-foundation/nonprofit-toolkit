@@ -6,7 +6,6 @@ import {
   caCdtfaPermitLicenseVerificationSource,
 } from '../jurisdictions/us-ca/sources/ca-cdtfa.ts'
 import { caFtbMyFtbSource } from '../jurisdictions/us-ca/sources/ca-ftb-myftb.ts'
-import { caFtbEntityStatusLetterSource } from '../jurisdictions/us-ca/sources/ca-ftb.ts'
 import { caSosBizfileSource } from '../jurisdictions/us-ca/sources/ca-sos.ts'
 import type { Entity, FetchImpl, SourceContext } from '../types/index.ts'
 import { SourceMetadataSchema } from '../types/index.ts'
@@ -104,9 +103,10 @@ describe('usCaJurisdiction', () => {
       automationAllowed: false,
     })
     expect(byId.get('ca-ftb-entity-status-letter')).toMatchObject({
-      kind: 'manual',
-      accessMethod: 'manual',
-      automationAllowed: false,
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      authRequired: false,
+      automationAllowed: true,
     })
     expect(byId.get('ca-cdtfa-permit-license-verification')).toMatchObject({
       kind: 'manual',
@@ -138,19 +138,13 @@ describe('usCaJurisdiction', () => {
     })
   })
 
-  it('keeps SOS and FTB manual source run methods as explicit ToS errors', async () => {
+  it('keeps SOS manual source run method as an explicit ToS error', async () => {
     const sosResult = await caSosBizfileSource.run(ENTITY, CONTEXT)
-    const ftbResult = await caFtbEntityStatusLetterSource.run(ENTITY, CONTEXT)
 
     expect(sosResult.isErr()).toBe(true)
     if (sosResult.isErr()) {
       expect(sosResult.error.type).toBe('tos')
       expect(sosResult.error.message).toContain('manual-only')
-    }
-    expect(ftbResult.isErr()).toBe(true)
-    if (ftbResult.isErr()) {
-      expect(ftbResult.error.type).toBe('tos')
-      expect(ftbResult.error.message).toContain('manual-only')
     }
   })
 

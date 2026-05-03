@@ -212,14 +212,12 @@ the current public surfaces do not provide a confidently permitted automated pat
 ### CA FTB Entity Status Letter source (TDD)
 
 - [x] Refresh and document the current FTB Entity Status Letter access policy.
-- [x] Tests for supported entity-type lookup by FTB Entity ID and entity name. Phase 2
-      records required manual evidence fields rather than automating the lookup.
-- [x] Tests for good standing, not in good standing, exempt-status verification, not
-      found, ambiguous results, and unsupported entity type. Deferred until manual
-      evidence ingestion exists; Phase 2 emits a manual-required finding instead.
+- [x] Tests for supported entity-type lookup by FTB Entity ID and entity name.
+- [x] Tests for FTB entity status, exempt-status verification, not-found results, and
+      malformed public summaries.
 - [x] Tests for the fact that FTB status does not represent SOS or AG standing.
-- [x] Implement read-only lookup via Playwright only if source policy supports it;
-      otherwise implement manual-required source output with exact evidence fields.
+- [x] Implement read-only lookup via the unauthenticated public Entity Status Letter
+      page.
 
 ### IRS EO BMF source (TDD)
 
@@ -257,15 +255,15 @@ the current public surfaces do not provide a confidently permitted automated pat
         manual evidence ingestion exists; Phase 2 emits manual-required findings.
   - [x] AG delinquent, suspended, revoked, cease-and-desist, or not registered
   - [x] AG RRF-1 missing, incomplete, rejected, or late
-  - [x] FTB not in good standing or not found. Deferred until manual evidence ingestion
-        exists; Phase 2 emits manual-required findings.
+  - [x] FTB not found and FTB exempt status not verified from the automated public
+        Entity Status Letter source.
 - [x] Tests for cross-source findings:
   - [x] legal-name mismatch
   - [x] mailing/principal-address mismatch. Deferred because Phase 2 source payloads do
         not include enough typed address data for a reliable address comparison.
   - [x] missing configured CA identifiers
-  - [x] conflicting good-standing signals. Deferred until manual CA SOS/FTB evidence can
-        be ingested as typed source records.
+  - [x] conflicting good-standing signals. Deferred until remaining manual CA SOS
+        evidence can be ingested as typed source records.
 - [x] Implement the engine so findings are derived from validated source records, not
       ad hoc string checks spread through individual sources.
 - [x] Move Phase 1 TEOS-derived findings into the engine if that keeps federal logic
@@ -311,9 +309,8 @@ the current public surfaces do not provide a confidently permitted automated pat
 - [x] For each source, record whether the result came from live public data, cache,
       manual evidence, policy-blocked manual requirement, or source failure.
       Live verification result: CA AG Registry = public search/detail-page success; IRS
-      EO BMF = public CSV success; IRS TEOS = public bulk-download success; CA SOS =
-      manual required by source policy; CA FTB = manual required pending source-policy
-      review.
+      EO BMF = public CSV success; IRS TEOS = public bulk-download success; CA FTB =
+      public Entity Status Letter success; CA SOS = manual required by source policy.
 - [x] Run `compliance-status` and verify it reads the stored discovery state without
       performing network discovery.
 - [x] Re-run discovery and confirm cache behavior is visible and correct. Local cache
@@ -461,8 +458,9 @@ prints exact evidence instructions instead of guessing or mutating portal state.
       `us-ca/ca-ag-registry` returned `success`.
 - [x] Confirm Phase 3 sources persist `AUTH` or `MANUAL` outcomes with detailed
       evidence instructions and no credential leakage. Verified
-      `ca-cdtfa-permit-license-verification`, `ca-sos-bizfile`, and
-      `ca-ftb-entity-status-letter` returned `manual_required`; verified
+      `ca-cdtfa-permit-license-verification` and `ca-sos-bizfile` returned
+      `manual_required`; confirmed `ca-ftb-entity-status-letter` returns an automated
+      public status payload; verified
       `ca-cdtfa-online-services` and `ca-ftb-myftb` returned `auth_required`
       with login URLs, field descriptors, evidence fields, and forbidden actions only.
       `ca-ag-online-filing` remains an optional dashboard-only source because public

@@ -259,8 +259,10 @@ describe('runMigration', () => {
     expect(viewReq?.query).toMatch(/jurisdiction_id/i)
     expect(viewReq?.query).toMatch(/source_id/i)
     expect(viewReq?.query).toMatch(/title/i)
-    expect(viewReq?.query).toMatch(/detail/i)
-    expect(viewReq?.query).toMatch(/TO_JSON_STRING\(evidence\)/i)
+    expect(viewReq?.query).toMatch(
+      /COALESCE\(JSON_VALUE\(f\.evidence, '\$\.code'\), f\.title\)/i,
+    )
+    expect(viewReq?.query).not.toMatch(/TO_JSON_STRING\(evidence\)/i)
     expect(viewReq?.query).toMatch(/NOT COALESCE\(/i)
     expect(viewReq?.query).toMatch(/JSON_VALUE\(f\.evidence, '\$\.code'\) IN/i)
     expect(viewReq?.query).toMatch(/'source\.failed'/i)

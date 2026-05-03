@@ -650,7 +650,7 @@ describe('formatComplianceStatusReport', () => {
     )
   })
 
-  it('does not ask the user to re-check FTB status letter when stored evidence already shows the issue', () => {
+  it('summarizes the latest automated FTB status letter when it shows the issue', () => {
     const rendered = formatComplianceStatusReport({
       entity: ENTITY,
       identifiers: IDENTIFIERS,
@@ -683,10 +683,10 @@ describe('formatComplianceStatusReport', () => {
 
     expect(rendered).toContain('CA Franchise Tax Board Entity Status Letter:')
     expect(rendered).toContain(
-      'Stored FTB Entity Status Letter evidence says FTB status ACTIVE and California exempt status NOT EXEMPT.',
+      'Latest public FTB Entity Status Letter says FTB status ACTIVE and California exempt status NOT EXEMPT.',
     )
     expect(rendered).toContain(
-      'Do not re-check the Entity Status Letter unless you believe that stored evidence is wrong.',
+      'The public Entity Status Letter check is automated; run compliance-discover again whenever you want to refresh this stored status.',
     )
     expect(rendered).not.toContain('Open https://webapp.ftb.ca.gov/eletter/')
   })
@@ -729,7 +729,7 @@ describe('formatComplianceStatusReport', () => {
         'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID FTB-1234567.',
       )
       expect(rendered).not.toContain(
-        'Stored FTB Entity Status Letter evidence says',
+        'Latest public FTB Entity Status Letter says',
       )
     }
   })
@@ -764,7 +764,7 @@ describe('formatComplianceStatusReport', () => {
       'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID FTB-1234567.',
     )
     expect(rendered).not.toContain(
-      'Stored FTB Entity Status Letter evidence says',
+      'Latest public FTB Entity Status Letter says',
     )
   })
 
@@ -799,7 +799,7 @@ describe('formatComplianceStatusReport', () => {
     })
 
     expect(rendered).toContain(
-      'Stored FTB Entity Status Letter evidence says FTB status not available in stored status and California exempt status NOT EXEMPT.',
+      'Latest public FTB Entity Status Letter says FTB status not available in stored status and California exempt status NOT EXEMPT.',
     )
     expect(rendered).not.toContain('Open https://webapp.ftb.ca.gov/eletter/')
   })
@@ -831,13 +831,13 @@ describe('formatComplianceStatusReport', () => {
     )
   })
 
-  it('uses the FTB entity name when an FTB entity ID is not configured', () => {
+  it('uses the California SOS entity number as the FTB entity ID fallback when no dedicated FTB ID is configured', () => {
     const rendered = formatComplianceStatusReport({
       entity: ENTITY,
       identifiers: {
         'us-federal': { ein: '12-3456789' },
         'us-ca': {
-          sosEntityNumber: 'C0123456',
+          sosEntityNumber: '6423690',
           ftbEntityName: 'Foo Foundation FTB',
         },
       },
@@ -856,7 +856,10 @@ describe('formatComplianceStatusReport', () => {
     })
 
     expect(rendered).toContain(
-      'Open https://webapp.ftb.ca.gov/eletter/ and search exact legal name Foo Foundation FTB.',
+      '- FTB entity ID: 6423690 (using California SOS entity number)',
+    )
+    expect(rendered).toContain(
+      'Open https://webapp.ftb.ca.gov/eletter/ and search FTB entity ID 6423690.',
     )
   })
 

@@ -432,6 +432,45 @@ describe('formatDiscoveryReport', () => {
     )
   })
 
+  it('prints the California SOS entity number as the FTB entity ID fallback when no dedicated FTB ID is configured', () => {
+    const rendered = formatDiscoveryReport({
+      ...report(),
+      identifiers: {
+        ...IDENTIFIERS,
+        'us-ca': {
+          sosEntityNumber: '6423690',
+          agCharityNumber: 'CT1234567',
+        },
+      },
+      runs: [
+        {
+          sourceId: 'ca-ftb-myftb',
+          jurisdictionId: 'us-ca',
+          description: 'FTB MyFTB',
+          accessUrl: 'https://www.ftb.ca.gov/myftb/',
+          accessMethod: 'playwright_readonly',
+          automationAllowed: true,
+          tosUrl:
+            'https://www.ftb.ca.gov/myftb/general-terms-and-conditions.html',
+          outcome: {
+            status: 'auth_required',
+            source_id: 'ca-ftb-myftb',
+            message: 'Authentication is required.',
+            loginUrl: 'https://www.ftb.ca.gov/myftb/',
+          },
+        },
+      ],
+    })
+
+    const actionSection = actionRequiredSection(rendered)
+    expect(actionSection).toContain(
+      '- FTB entity ID: 6423690 (using California SOS entity number)',
+    )
+    expect(actionSection).toContain(
+      'Open the business account for this FTB entity ID: 6423690.',
+    )
+  })
+
   it('uses configured values for authenticated California walkthroughs without re-asking for CA AG public status', () => {
     const base = report()
     const rendered = formatDiscoveryReport({
