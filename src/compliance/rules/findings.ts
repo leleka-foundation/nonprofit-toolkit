@@ -28,6 +28,27 @@ const CaAgPayloadSchema = z.object({
   lastRenewal: z.string().optional(),
 })
 
+const CaFtbEntityStatusLetterPayloadSchema = z.object({
+  matchStatus: z.enum(['found', 'not_found']),
+  ftb_status: z.string().optional(),
+  exempt_status_verified: z.string().optional(),
+})
+
+const CaSosBizfilePayloadSchema = z.object({
+  matchStatus: z.enum(['found', 'not_found']),
+  entity_name: z.string().optional(),
+  entity_status: z.string().optional(),
+})
+
+const CaCdtfaPublicVerificationPayloadSchema = z.object({
+  matchStatus: z.enum(['found']),
+  account_type: z.string().min(1),
+  account_number: z.string().min(1),
+  verification_status: z.string().min(1),
+  is_valid: z.boolean(),
+  owner_name: z.string().nullable().optional(),
+})
+
 export interface DeriveComplianceFindingsArgs {
   readonly entity: Entity
   readonly identifiers: EntityIdentifiers
@@ -49,6 +70,13 @@ type SuccessDiscoveryRun = DiscoveryRun & {
   readonly outcome: Extract<
     DiscoveryRun['outcome'],
     { readonly status: 'success' }
+  >
+}
+
+type AuthRequiredDiscoveryRun = DiscoveryRun & {
+  readonly outcome: Extract<
+    DiscoveryRun['outcome'],
+    { readonly status: 'auth_required' }
   >
 }
 
@@ -112,7 +140,10 @@ function deriveRunFindings(
     return [policyBlockedFinding(run, outcome.reason)]
   }
   if (outcome.status === 'auth_required') {
-    return [authRequiredFinding(run, outcome.message)]
+    if (run.sourceId === 'ca-ag-online-filing') {
+      return []
+    }
+    return [authRequiredFinding({ ...run, outcome }, outcome.message)]
   }
   if (outcome.status === 'source_failure') {
     return [sourceFailureFinding(run, outcome.error_type, outcome.message)]
@@ -122,6 +153,24 @@ function deriveRunFindings(
   }
   if (outcome.status === 'success' && run.sourceId === 'ca-ag-registry') {
     return deriveCaAgFindings(entity, { ...run, outcome })
+  }
+  if (
+    outcome.status === 'success' &&
+    run.sourceId === 'ca-ftb-entity-status-letter'
+  ) {
+    return deriveCaFtbEntityStatusLetterFindings({ ...run, outcome })
+  }
+  if (outcome.status === 'success' && run.sourceId === 'ca-sos-bizfile') {
+    return deriveCaSosBizfileFindings(entity, { ...run, outcome })
+  }
+  if (
+    outcome.status === 'success' &&
+    run.sourceId === 'ca-cdtfa-permit-license-verification'
+  ) {
+    return deriveCaCdtfaPublicVerificationFindings(entity, {
+      ...run,
+      outcome,
+    })
   }
   return []
 }
@@ -160,7 +209,10 @@ function policyBlockedFinding(run: DiscoveryRun, reason: string): FindingDraft {
   }
 }
 
-function authRequiredFinding(run: DiscoveryRun, message: string): FindingDraft {
+function authRequiredFinding(
+  run: AuthRequiredDiscoveryRun,
+  message: string,
+): FindingDraft {
   return {
     code: 'source.auth_required',
     jurisdictionId: run.jurisdictionId,
@@ -168,11 +220,32 @@ function authRequiredFinding(run: DiscoveryRun, message: string): FindingDraft {
     severity: 'warn',
     title: `Authentication required: ${run.description}`,
     detail: message,
-    evidence: {
-      code: 'source.auth_required',
-      accessMethod: run.accessMethod,
-    },
+    evidence: authRequiredEvidence(run),
   }
+}
+
+function authRequiredEvidence(
+  run: AuthRequiredDiscoveryRun,
+): Record<string, unknown> {
+  const evidence: Record<string, unknown> = {
+    code: 'source.auth_required',
+    accessMethod: run.accessMethod,
+  }
+  if (run.outcome.loginUrl !== undefined) {
+    evidence.loginUrl = run.outcome.loginUrl
+  }
+  if (run.outcome.credentialMode !== undefined) {
+    evidence.credentialMode = run.outcome.credentialMode
+  }
+  if (run.outcome.evidenceFields !== undefined) {
+    evidence.requiredFields = run.outcome.evidenceFields.map(
+      (field) => field.key,
+    )
+  }
+  if (run.outcome.forbiddenActions !== undefined) {
+    evidence.forbiddenActions = run.outcome.forbiddenActions.slice()
+  }
+  return evidence
 }
 
 function sourceFailureFinding(
@@ -252,9 +325,9 @@ function deriveCaAgFindings(
       jurisdictionId: run.jurisdictionId,
       sourceId: run.sourceId,
       severity: 'warn',
-      title: 'Entity not found in CA AG Registry reports',
+      title: 'Entity not found in CA AG Registry Search Tool',
       detail:
-        'The CA AG Registry report downloads did not contain a matching EIN, charity number, or SOS/FTB number.',
+        'The public CA AG Registry Search Tool did not return a matching EIN, charity number, SOS/FTB number, or legal name.',
       evidence: { code: 'ca.ag_not_found' },
     })
   }
@@ -266,7 +339,7 @@ function deriveCaAgFindings(
       severity: 'error',
       title: 'CA AG Registry status blocks operation or solicitation',
       detail:
-        'The entity appears in the CA AG Registry report for charities that may not operate or solicit.',
+        'The public CA AG Registry Search Tool lists a status that blocks operation or solicitation.',
       evidence: {
         code: 'ca.ag_may_not_operate',
         listCategory: parsed.data.listCategory,
@@ -282,7 +355,7 @@ function deriveCaAgFindings(
       severity: 'warn',
       title: 'CA AG Registry status is undetermined',
       detail:
-        'The entity appears in the CA AG Registry report for charities with undetermined status.',
+        'The public CA AG Registry Search Tool lists an undetermined status.',
       evidence: {
         code: 'ca.ag_status_undetermined',
         listCategory: parsed.data.listCategory,
@@ -296,9 +369,9 @@ function deriveCaAgFindings(
       jurisdictionId: run.jurisdictionId,
       sourceId: run.sourceId,
       severity: 'error',
-      title: 'CA AG Registry reports not operating or dissolving status',
+      title: 'CA AG Registry lists not operating or dissolving status',
       detail:
-        'The entity appears in the CA AG Registry report for charities not operating or in dissolution.',
+        'The public CA AG Registry Search Tool lists the entity as not operating or in dissolution.',
       evidence: {
         code: 'ca.ag_not_operating_or_dissolving',
         listCategory: parsed.data.listCategory,
@@ -317,7 +390,7 @@ function deriveCaAgFindings(
       severity: 'warn',
       title: 'CA AG Registry row has no last-renewal date',
       detail:
-        'The CA AG Registry report matched the entity but did not include a last-renewal date.',
+        'The public CA AG Registry detail page matched the entity but did not include a last-renewal date.',
       evidence: { code: 'ca.ag_last_renewal_missing' },
     })
   }
@@ -328,6 +401,159 @@ function deriveCaAgFindings(
   ) {
     findings.push(
       nameMismatchFinding(entity, run, parsed.data.name, 'CA AG Registry'),
+    )
+  }
+  return findings
+}
+
+function deriveCaFtbEntityStatusLetterFindings(
+  run: SuccessDiscoveryRun,
+): readonly FindingDraft[] {
+  const parsed = CaFtbEntityStatusLetterPayloadSchema.safeParse(
+    run.outcome.output.record.payload,
+  )
+  if (!parsed.success) {
+    return []
+  }
+  if (parsed.data.matchStatus === 'not_found') {
+    return [
+      {
+        code: 'ca.ftb.entity_status_letter_not_found',
+        jurisdictionId: run.jurisdictionId,
+        sourceId: run.sourceId,
+        severity: 'warn',
+        title: 'Entity not found in CA FTB Entity Status Letter',
+        detail:
+          'The public California FTB Entity Status Letter lookup did not return the configured entity.',
+        evidence: { code: 'ca.ftb.entity_status_letter_not_found' },
+      },
+    ]
+  }
+  const exemptStatus = parsed.data.exempt_status_verified
+  if (exemptStatus === undefined || isFtbExemptStatusVerified(exemptStatus)) {
+    return []
+  }
+  return [
+    {
+      code: 'ca.ftb.exempt_status_not_verified',
+      jurisdictionId: run.jurisdictionId,
+      sourceId: run.sourceId,
+      severity: 'warn',
+      title: 'California FTB exempt status is not verified',
+      detail:
+        'The public California FTB Entity Status Letter does not verify California exempt status.',
+      evidence: {
+        code: 'ca.ftb.exempt_status_not_verified',
+        exemptStatusVerified: exemptStatus,
+      },
+    },
+  ]
+}
+
+function isFtbExemptStatusVerified(value: string): boolean {
+  const normalized = value.trim().toLocaleLowerCase()
+  return (
+    normalized === 'yes' ||
+    normalized === 'true' ||
+    normalized === 'verified' ||
+    normalized === 'exempt' ||
+    normalized === 'exempt status verified'
+  )
+}
+
+function deriveCaSosBizfileFindings(
+  entity: Entity,
+  run: SuccessDiscoveryRun,
+): readonly FindingDraft[] {
+  const parsed = CaSosBizfilePayloadSchema.safeParse(
+    run.outcome.output.record.payload,
+  )
+  if (!parsed.success) {
+    return []
+  }
+  if (parsed.data.matchStatus === 'not_found') {
+    return [
+      {
+        code: 'ca.sos.bizfile_not_found',
+        jurisdictionId: run.jurisdictionId,
+        sourceId: run.sourceId,
+        severity: 'warn',
+        title: 'Entity not found in CA SOS bizfile',
+        detail:
+          'The public California Secretary of State bizfile search did not return the configured entity.',
+        evidence: { code: 'ca.sos.bizfile_not_found' },
+      },
+    ]
+  }
+  const findings: FindingDraft[] = []
+  const entityStatus = parsed.data.entity_status
+  if (entityStatus !== undefined && !isCaSosStatusActive(entityStatus)) {
+    findings.push({
+      code: 'ca.sos.bizfile_not_active',
+      jurisdictionId: run.jurisdictionId,
+      sourceId: run.sourceId,
+      severity: 'error',
+      title: 'CA SOS bizfile status is not active',
+      detail: `The public California Secretary of State bizfile search lists entity status "${entityStatus}".`,
+      evidence: {
+        code: 'ca.sos.bizfile_not_active',
+        entityStatus,
+      },
+    })
+  }
+  const sourceName = parsed.data.entity_name
+  if (sourceName !== undefined && !sameName(entity.legal_name, sourceName)) {
+    findings.push(
+      nameMismatchFinding(entity, run, sourceName, 'CA SOS bizfile'),
+    )
+  }
+  return findings
+}
+
+function isCaSosStatusActive(value: string): boolean {
+  return value.trim().toLocaleLowerCase() === 'active'
+}
+
+function deriveCaCdtfaPublicVerificationFindings(
+  entity: Entity,
+  run: SuccessDiscoveryRun,
+): readonly FindingDraft[] {
+  const parsed = CaCdtfaPublicVerificationPayloadSchema.safeParse(
+    run.outcome.output.record.payload,
+  )
+  if (!parsed.success) {
+    return []
+  }
+  const findings: FindingDraft[] = []
+  if (!parsed.data.is_valid) {
+    findings.push({
+      code: 'ca.cdtfa.public_verification_invalid',
+      jurisdictionId: run.jurisdictionId,
+      sourceId: run.sourceId,
+      severity: 'warn',
+      title: 'CA CDTFA public verification says account is invalid',
+      detail: `The public CA CDTFA permit, license, or account verification page says ${parsed.data.account_type} ${parsed.data.account_number} is invalid.`,
+      evidence: {
+        code: 'ca.cdtfa.public_verification_invalid',
+        accountType: parsed.data.account_type,
+        accountNumber: parsed.data.account_number,
+        verificationStatus: parsed.data.verification_status,
+      },
+    })
+  }
+  const ownerName = parsed.data.owner_name
+  if (
+    ownerName !== undefined &&
+    ownerName !== null &&
+    !sameName(entity.legal_name, ownerName)
+  ) {
+    findings.push(
+      nameMismatchFinding(
+        entity,
+        run,
+        ownerName,
+        'CA CDTFA public permit, license, or account verification',
+      ),
     )
   }
   return findings

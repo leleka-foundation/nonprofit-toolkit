@@ -63,6 +63,14 @@ vi.mock('@google-cloud/secret-manager', () => ({
   },
 }))
 
+vi.mock('../sources/browser-page.ts', async () => {
+  const { errAsync } = await import('neverthrow')
+  return {
+    openDefaultBrowserPage: () =>
+      errAsync({ type: 'network', message: 'blocked browser in test' }),
+  }
+})
+
 const { BigQuery } = await import('@google-cloud/bigquery')
 const { SecretManagerServiceClient } =
   await import('@google-cloud/secret-manager')
@@ -338,10 +346,10 @@ describe('runDiscoveryProduction', () => {
   })
 
   it('uses the default jurisdictions list when none is supplied', async () => {
-    // Default is `[usFederalJurisdiction]`. The IRS TEOS source it ships
-    // with will try to fetch — we inject a fetch that fails fast so the run
-    // is recorded as a failure (which is fine; we are only proving the
-    // default jurisdictions list reached `runDiscovery`).
+    // Default is the federal + California jurisdiction list. Network sources
+    // get a blocked fetch and the browser source gets a mocked browser
+    // factory; failures are fine here because we only prove the default list
+    // reached `runDiscovery`.
     happyPath()
 
     const result = await runDiscoveryProduction({
@@ -355,8 +363,12 @@ describe('runDiscoveryProduction', () => {
     expect(result.isOk()).toBe(true)
     if (!result.isOk()) return
     expect(result.value.runs.map((run) => run.sourceId).sort()).toEqual([
+      'ca-ag-online-filing',
       'ca-ag-registry',
+      'ca-cdtfa-online-services',
+      'ca-cdtfa-permit-license-verification',
       'ca-ftb-entity-status-letter',
+      'ca-ftb-myftb',
       'ca-sos-bizfile',
       'irs-eo-bmf',
       'irs-teos',

@@ -207,11 +207,12 @@ export function currentOpenFindingsViewQuery(
   const runsTable = `\`${datasetRef}.discovery_runs\``
   return `
     WITH latest_runs AS (
-      SELECT source_id, status
+      SELECT source_id, status, payload
       FROM (
         SELECT
           source_id,
           status,
+          payload,
           ROW_NUMBER() OVER (
             PARTITION BY source_id
             ORDER BY completed_at DESC, started_at DESC, run_id DESC
@@ -225,11 +226,9 @@ export function currentOpenFindingsViewQuery(
         f.*,
         ROW_NUMBER() OVER (
           PARTITION BY
-            jurisdiction_id,
-            source_id,
-            title,
-            detail,
-            COALESCE(TO_JSON_STRING(evidence), '')
+            f.jurisdiction_id,
+            f.source_id,
+            COALESCE(JSON_VALUE(f.evidence, '$.code'), f.title)
           ORDER BY opened_at DESC, finding_id DESC
         ) AS rn
       FROM ${findingsTable} f
@@ -251,8 +250,28 @@ export function currentOpenFindingsViewQuery(
     WHERE f.rn = 1
       AND f.status = 'open'
       AND NOT COALESCE(
-        JSON_VALUE(f.evidence, '$.code') = 'source.failed'
-          AND r.status = 'succeeded',
+        (
+          JSON_VALUE(f.evidence, '$.code') IN (
+            'source.failed',
+            'source.auth_required',
+            'source.manual_required',
+            'source.policy_blocked'
+          )
+          AND r.status = 'succeeded'
+        )
+        OR (
+          f.source_id = 'ca-ftb-entity-status-letter'
+          AND JSON_VALUE(f.evidence, '$.code') = 'ca.ftb.exempt_status_not_verified'
+          AND r.status = 'succeeded'
+          AND UPPER(TRIM(COALESCE(JSON_VALUE(r.payload, '$.exempt_status_verified'), ''))) IN (
+            'YES',
+            'TRUE',
+            'VERIFIED',
+            'EXEMPT',
+            'EXEMPT STATUS VERIFIED'
+          )
+        )
+        OR f.source_id = 'ca-ag-online-filing',
         FALSE
       )
   `

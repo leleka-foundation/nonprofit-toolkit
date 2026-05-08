@@ -15,6 +15,7 @@ import {
   ComplianceFindingRowSchema,
   ComplianceSourceRowSchema,
   buildTableSchema,
+  currentOpenFindingsViewQuery,
   type TableSchemaField,
 } from '../state/bq-rows.ts'
 
@@ -36,6 +37,43 @@ describe('COMPLIANCE_DATASET / COMPLIANCE_TABLES', () => {
     for (const t of COMPLIANCE_TABLES) {
       expect(t.fields.some((f) => f.mode === 'REQUIRED')).toBe(true)
     }
+  })
+})
+
+describe('currentOpenFindingsViewQuery', () => {
+  it('keeps optional CA AG Online Renewal auth findings out of current open findings', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain("f.source_id = 'ca-ag-online-filing'")
+  })
+
+  it('closes stale source-gap findings when the latest source run succeeded', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain("JSON_VALUE(f.evidence, '$.code') IN")
+    expect(query).toContain("'source.failed'")
+    expect(query).toContain("'source.auth_required'")
+    expect(query).toContain("'source.manual_required'")
+    expect(query).toContain("'source.policy_blocked'")
+    expect(query).toContain("r.status = 'succeeded'")
+  })
+
+  it('closes stale FTB exempt-status findings when the latest FTB payload verifies exemption', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain("'ca.ftb.exempt_status_not_verified'")
+    expect(query).toContain("JSON_VALUE(r.payload, '$.exempt_status_verified')")
+    expect(query).toContain("'EXEMPT'")
+    expect(query).toContain("'VERIFIED'")
+  })
+
+  it('deduplicates repeated current findings by semantic finding code instead of full evidence history', () => {
+    const query = currentOpenFindingsViewQuery('project.dataset')
+
+    expect(query).toContain(
+      "COALESCE(JSON_VALUE(f.evidence, '$.code'), f.title)",
+    )
+    expect(query).not.toContain('TO_JSON_STRING(evidence)')
   })
 })
 

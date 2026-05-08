@@ -22,16 +22,27 @@ export type SourceKind = z.infer<typeof SourceKindSchema>
 
 /**
  * How the source is accessed. This is policy metadata, not runner dispatch:
- * an `api` source can use an official bulk download, and a `manual` source can
- * point to a public search page that cannot be automated under current terms.
+ * an `api` source can use an official bulk download or public read-only page,
+ * and a `manual` source can point to a public search page that cannot be
+ * automated under current terms.
  */
 export const SourceAccessMethodSchema = z.enum([
   'official_api',
   'official_bulk_download',
+  'official_public_page',
   'playwright_readonly',
   'manual',
 ])
 export type SourceAccessMethod = z.infer<typeof SourceAccessMethodSchema>
+
+export const SourceCredentialModeSchema = z.enum([
+  'secret_manager',
+  'user_entered_session',
+])
+export type SourceCredentialMode = z.infer<typeof SourceCredentialModeSchema>
+
+export const SourceMfaModeSchema = z.enum(['none', 'user_assisted'])
+export type SourceMfaMode = z.infer<typeof SourceMfaModeSchema>
 
 /**
  * Source freshness metadata. `observedAt` is when we checked or fetched the
@@ -45,11 +56,44 @@ export const SourceFreshnessSchema = z.object({
 
 export type SourceFreshness = z.infer<typeof SourceFreshnessSchema>
 
+export const SourceManualEvidenceFieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  required: z.boolean(),
+})
+
+export type SourceManualEvidenceField = z.infer<
+  typeof SourceManualEvidenceFieldSchema
+>
+
+export const SourceCredentialFieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  required: z.boolean(),
+  secret: z.boolean(),
+})
+
+export type SourceCredentialField = z.infer<typeof SourceCredentialFieldSchema>
+
+export const SourceAuthRequirementSchema = z.object({
+  loginUrl: z.string().url(),
+  credentialMode: SourceCredentialModeSchema,
+  credentialSecretName: z.string().min(1).optional(),
+  credentialFields: z.array(SourceCredentialFieldSchema).min(1),
+  mfa: SourceMfaModeSchema,
+  instructions: z.array(z.string().min(1)).min(1),
+  evidenceFields: z.array(SourceManualEvidenceFieldSchema).min(1),
+  forbiddenActions: z.array(z.string().min(1)).min(1),
+})
+
+export type SourceAuthRequirement = z.infer<typeof SourceAuthRequirementSchema>
+
 const SourceMetadataBaseSchema = z.object({
   accessUrl: z.string().url(),
   tosUrl: z.string().url(),
   accessMethod: SourceAccessMethodSchema,
   sourceFreshness: SourceFreshnessSchema.optional(),
+  auth: SourceAuthRequirementSchema.optional(),
 })
 
 const AutomatedSourceMetadataSchema = SourceMetadataBaseSchema.extend({
@@ -114,16 +158,6 @@ export const SourceRunOutputSchema = z.object({
   findings: z.array(FindingSchema),
 })
 
-export const SourceManualEvidenceFieldSchema = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  required: z.boolean(),
-})
-
-export type SourceManualEvidenceField = z.infer<
-  typeof SourceManualEvidenceFieldSchema
->
-
 /**
  * Typed source outcomes used by Phase 2 orchestration and reporting.
  *
@@ -157,6 +191,13 @@ export const SourceRunOutcomeSchema = z.discriminatedUnion('status', [
     status: z.literal('auth_required'),
     source_id: z.string().min(1),
     message: z.string().min(1),
+    loginUrl: z.string().url().optional(),
+    credentialMode: SourceCredentialModeSchema.optional(),
+    credentialFields: z.array(SourceCredentialFieldSchema).optional(),
+    mfa: SourceMfaModeSchema.optional(),
+    instructions: z.array(z.string().min(1)).optional(),
+    evidenceFields: z.array(SourceManualEvidenceFieldSchema).optional(),
+    forbiddenActions: z.array(z.string().min(1)).optional(),
   }),
 ])
 
@@ -173,12 +214,69 @@ export type FetchImpl = (
   init?: RequestInit,
 ) => Promise<Response>
 
+export interface BrowserLocator {
+  filter(options: { readonly hasText: string | RegExp }): BrowserLocator
+  first(): BrowserLocator
+  count(): Promise<number>
+  click(options?: { readonly force?: boolean }): Promise<unknown>
+  innerText(): Promise<string>
+  inputValue(): Promise<string>
+}
+
+export interface BrowserResponse {
+  url(): string
+  status(): number
+  json(): Promise<unknown>
+}
+
+export interface BrowserPage {
+  setDefaultTimeout(timeoutMs: number): void
+  goto(
+    url: string,
+    options?: {
+      readonly waitUntil?: 'load' | 'domcontentloaded' | 'networkidle'
+      readonly timeout?: number
+    },
+  ): Promise<unknown>
+  waitForSelector(
+    selector: string,
+    options?: { readonly timeout?: number },
+  ): Promise<unknown>
+  selectOption(
+    selector: string,
+    values: { readonly label: string },
+  ): Promise<unknown>
+  fill(selector: string, value: string): Promise<unknown>
+  click(selector: string): Promise<unknown>
+  waitForLoadState(
+    state?: 'load' | 'domcontentloaded' | 'networkidle',
+    options?: { readonly timeout?: number },
+  ): Promise<unknown>
+  waitForResponse(
+    predicate: (response: BrowserResponse) => boolean,
+    options?: { readonly timeout?: number },
+  ): Promise<BrowserResponse>
+  locator(selector: string): BrowserLocator
+}
+
+export interface BrowserPageSession {
+  readonly page: BrowserPage
+  readonly close: () => Promise<void>
+}
+
+export type BrowserPageFactory = () => ResultAsync<
+  BrowserPageSession,
+  SourceError
+>
+
 /**
  * Context passed to a source's `run` function.
  *
  * The runner provides:
  *   - `now`         clock — tests inject a fixed time
  *   - `fetch`       HTTP client — tests inject a fake
+ *   - `browserPageFactory` optional browser-page factory for public pages that
+ *                          require a real browser but no user auth
  *   - `downloadCache` optional shared cache for official bulk downloads
  *   - `identifiers` per-jurisdiction IDs (EIN, SOS number, etc.) — the
  *                   orchestrator reads these from Secret Manager once before
@@ -188,6 +286,7 @@ export type FetchImpl = (
 export interface SourceContext {
   readonly now: () => Date
   readonly fetch: FetchImpl
+  readonly browserPageFactory?: BrowserPageFactory
   readonly downloadCache?: DownloadCacheStore
   readonly identifiers: EntityIdentifiers
 }
@@ -212,6 +311,7 @@ interface SourceBase {
   readonly accessUrl: string
   readonly accessMethod: SourceAccessMethod
   readonly sourceFreshness?: SourceFreshness
+  readonly auth?: SourceAuthRequirement
   readonly run: (
     entity: Entity,
     ctx: SourceContext,

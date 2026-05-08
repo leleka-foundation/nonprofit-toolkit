@@ -87,8 +87,8 @@ This is the working checklist used by the implementation subagent for each phase
 Phase 2 adds public-source discovery for IRS EO BMF and California, typed source
 outcomes, bounded download evidence/cache support, a findings/gap engine, upgraded
 `compliance-discover` reporting, and a read-only `compliance-status` skill. Source
-review was refreshed on 2026-04-28; CA SOS and CA FTB remain manual-required because
-the current public surfaces do not provide a confidently permitted automated path.
+review was refreshed on 2026-04-28; the Phase 2 CA SOS manual decision was superseded in
+Phase 3 after validating the public bizfile page flow in a browser.
 
 ### Phase 1 follow-ups to pick up
 
@@ -96,9 +96,9 @@ the current public surfaces do not provide a confidently permitted automated pat
       migration script against a real GCP project.
 - [x] Confirm the user's existing onboarded entity IDs and attributes can be read from
       Secret Manager and BigQuery before running any live discovery.
-- [x] Add shared download/cache support before adding IRS BMF or CA AG CSV downloads.
-      Phase 1 downloads the full IRS Pub. 78 and Auto-Revocation files on every run;
-      Phase 2 should stop repeating identical bulk downloads.
+- [x] Add shared download/cache support before adding IRS BMF downloads and bounded
+      public-page evidence. Phase 1 downloads the full IRS Pub. 78 and Auto-Revocation
+      files on every run; Phase 2 should stop repeating identical bulk downloads.
 - [x] Consume the existing `us-ca` keys in `EntityIdentifiers` rather than inventing a
       second California identifier shape.
 
@@ -179,13 +179,12 @@ the current public surfaces do not provide a confidently permitted automated pat
 
 - [x] Refresh and document the current CA SOS access policy. Do not implement browser
       automation unless current terms and source review support it.
-- [x] Tests for the default manual-source path, including exact instructions for
+- [x] Tests for the original Phase 2 manual-source path, including exact instructions for
       checking bizfile business status and recording structured evidence.
-- [x] If an authorized bulk/public-data path is available, tests for its parser and
-      status mapping. No permitted bulk/public-data path was identified in Phase 2.
-- [x] Tests for CA SOS statuses that should produce findings: active, suspended,
-      forfeited, dissolved, canceled, surrendered, and not found. Deferred until manual
-      evidence ingestion exists; Phase 2 emits a manual-required finding instead.
+- [x] Add Phase 3 tests for the public bizfile browser flow, response parser, and status
+      mapping.
+- [x] Tests for CA SOS statuses that should produce findings: active, non-active
+      statuses, legal-name mismatch, and not found.
 - [x] Tests that the source preserves entity numbers exactly, including leading zeroes
       or the `B` prefix.
 - [x] Implement CA SOS as manual or authorized bulk/public-data source according to the
@@ -195,35 +194,29 @@ the current public surfaces do not provide a confidently permitted automated pat
 
 - [x] Refresh and document the current CA AG Registry Search Tool / Online Filing
       Service transition state.
-- [x] Tests for downloading and parsing Registry Reports CSVs for:
-  - [x] may operate or solicit
-  - [x] may not operate or solicit
-  - [x] undetermined
-  - [x] not operating / dissolving
+- [x] Tests for submitting the public Registry Search Tool and parsing the public detail
+      page for:
+  - [x] real-time registry status
+  - [x] RCT registration number and FEIN
+  - [x] renewal due date, issue/effective dates, and last-renewal date
+  - [x] annual renewal rows
 - [x] Tests for Registry status normalization using the official filing-status
       definitions.
 - [x] Tests for AG annual renewal information statuses: accepted, e-accepted, in
-      process, incomplete, not submitted, and rejected. Phase 2 covers missing
-      last-renewal evidence from the official reports; detailed filing-status ingestion
-      is deferred until a permitted search/detail source is added.
-- [x] Tests for incomplete report data where downloadable lists omit the entity but the
-      search tool may still have current detail.
-- [x] Implement Registry Reports CSV source first.
-- [x] Implement search-tool supplementation only if the refreshed policy permits it and
-      the CSV source leaves a real data gap. Otherwise emit manual-required evidence
-      instructions for the search-tool detail page.
+      process, incomplete, not submitted, and rejected. Public detail-page ingestion now
+      captures the annual renewal rows exposed without authentication.
+- [x] Tests for no-result searches and public page schema changes.
+- [x] Implement the public Registry Search Tool/detail-page source.
 
 ### CA FTB Entity Status Letter source (TDD)
 
 - [x] Refresh and document the current FTB Entity Status Letter access policy.
-- [x] Tests for supported entity-type lookup by FTB Entity ID and entity name. Phase 2
-      records required manual evidence fields rather than automating the lookup.
-- [x] Tests for good standing, not in good standing, exempt-status verification, not
-      found, ambiguous results, and unsupported entity type. Deferred until manual
-      evidence ingestion exists; Phase 2 emits a manual-required finding instead.
+- [x] Tests for supported entity-type lookup by FTB Entity ID and entity name.
+- [x] Tests for FTB entity status, exempt-status verification, not-found results, and
+      malformed public summaries.
 - [x] Tests for the fact that FTB status does not represent SOS or AG standing.
-- [x] Implement read-only lookup via Playwright only if source policy supports it;
-      otherwise implement manual-required source output with exact evidence fields.
+- [x] Implement read-only lookup via the unauthenticated public Entity Status Letter
+      page.
 
 ### IRS EO BMF source (TDD)
 
@@ -261,15 +254,15 @@ the current public surfaces do not provide a confidently permitted automated pat
         manual evidence ingestion exists; Phase 2 emits manual-required findings.
   - [x] AG delinquent, suspended, revoked, cease-and-desist, or not registered
   - [x] AG RRF-1 missing, incomplete, rejected, or late
-  - [x] FTB not in good standing or not found. Deferred until manual evidence ingestion
-        exists; Phase 2 emits manual-required findings.
+  - [x] FTB not found and FTB exempt status not verified from the automated public
+        Entity Status Letter source.
 - [x] Tests for cross-source findings:
   - [x] legal-name mismatch
   - [x] mailing/principal-address mismatch. Deferred because Phase 2 source payloads do
         not include enough typed address data for a reliable address comparison.
   - [x] missing configured CA identifiers
-  - [x] conflicting good-standing signals. Deferred until manual CA SOS/FTB evidence can
-        be ingested as typed source records.
+  - [x] conflicting good-standing signals. Deferred until multiple typed good-standing
+        signals are available for a reliable cross-source comparison.
 - [x] Implement the engine so findings are derived from validated source records, not
       ad hoc string checks spread through individual sources.
 - [x] Move Phase 1 TEOS-derived findings into the engine if that keeps federal logic
@@ -314,9 +307,10 @@ the current public surfaces do not provide a confidently permitted automated pat
 - [x] Run `compliance-discover` against the onboarded nonprofit.
 - [x] For each source, record whether the result came from live public data, cache,
       manual evidence, policy-blocked manual requirement, or source failure.
-      Live verification result: CA AG Registry = public CSV success; IRS EO BMF =
-      public CSV success; IRS TEOS = public bulk-download success; CA SOS = manual
-      required by source policy; CA FTB = manual required pending source-policy review.
+      Live verification result: CA AG Registry = public search/detail-page success; IRS
+      EO BMF = public CSV success; IRS TEOS = public bulk-download success; CA FTB =
+      public Entity Status Letter success; CA SOS was initially manual by source policy
+      and later automated in Phase 3 through the public bizfile page flow.
 - [x] Run `compliance-status` and verify it reads the stored discovery state without
       performing network discovery.
 - [x] Re-run discovery and confirm cache behavior is visible and correct. Local cache
@@ -352,9 +346,163 @@ the current public surfaces do not provide a confidently permitted automated pat
 
 ---
 
-## Phase 3 — Authenticated discovery
+## Phase 3 — Authenticated and user-assisted California discovery — IMPLEMENTED
 
-Stub. To be detailed when reached.
+Phase 3 adds the authenticated/source-gated layer that Phase 2 deliberately did
+not attempt. The implementation must remain read-only: if credentials, MFA, or a
+user-owned account are required, discovery persists a detailed `AUTH` outcome and
+prints exact evidence instructions instead of guessing or mutating portal state.
+
+### Pre-flight
+
+- [x] Read `CLAUDE.md`, every file in `.claude/rules/`,
+      `docs/compliance/PLAN.md`, this checklist, and the relevant compliance
+      skill docs.
+- [x] Fetch origin, checkout `main`, pull the merged Phase 2 branch, and create
+      `compliance/phase-3-authenticated-discovery`.
+- [x] Run `bun typecheck`, `bun lint`, and `bun test:run` once on a clean Phase 3
+      branch.
+- [x] Refresh current official URLs and source terms for:
+  - [x] CDTFA public permit/license/account verification
+  - [x] CDTFA Online Services
+  - [x] MyFTB terms and public Entity Status Letter context
+  - [x] CA AG Online Filing Service / Registry transition
+  - [x] IRS Tax Pro Account
+- [x] Update `docs/compliance/PLAN.md` with detailed Phase 3 scope, boundaries,
+      source research, work packages, and forbidden actions.
+
+### Auth metadata and outcome contract (TDD)
+
+- [x] Tests for authenticated source metadata:
+  - [x] login URL
+  - [x] credential/session mode
+  - [x] credential fields marked secret or non-secret
+  - [x] MFA mode
+  - [x] user-facing auth instructions
+  - [x] typed evidence fields
+  - [x] forbidden actions
+- [x] Implement source auth metadata schemas and TypeScript types without `any` or
+      `as`.
+- [x] Tests that an authenticated `playwright` source returns `AUTH` before the
+      runner rejects unsupported browser automation.
+- [x] Tests that auth-required discovery-run rows persist bounded auth metadata and
+      never include credential values.
+- [x] Implement runner support for detailed auth-required outcomes.
+
+### Reports and findings (TDD)
+
+- [x] Tests for `compliance-discover` rendering detailed `AUTH` source states:
+  - [x] login URL
+  - [x] source terms URL
+  - [x] auth/setup steps
+  - [x] evidence fields
+  - [x] forbidden actions
+- [x] Tests that auth-required findings include stable source/evidence metadata but
+      no secrets.
+- [x] Implement report and findings updates.
+- [x] Update `compliance-status` output only if stored Phase 3 outcomes require a
+      clearer presentation than the existing failed-run format. Decision: no code
+      change needed; `compliance-status` intentionally reports stored failed-run rows
+      without network discovery, and detailed `AUTH` evidence remains in
+      `compliance-discover`.
+- [x] Add a tested evidence-ingestion path so user-provided manual/authenticated
+      answers are recorded as successful source-run history, and current-state views
+      stop surfacing stale `source.auth_required`, `source.manual_required`,
+      `source.policy_blocked`, or `source.failed` gap findings once the latest run for
+      that source succeeds.
+
+### California Phase 3 sources (TDD)
+
+- [x] Tests that `us-ca` registers all Phase 3 sources independently:
+  - [x] `ca-cdtfa-permit-license-verification`
+  - [x] `ca-cdtfa-online-services`
+  - [x] `ca-ftb-myftb`
+  - [x] `ca-ag-online-filing`
+- [x] Tests for optional California CDTFA identifiers:
+  - [x] seller's permit / account number
+  - [x] use-tax account number
+  - [x] special tax or fee account number
+- [x] Implement CDTFA public permit/license/account verification as an automated public
+      browser check for configured seller permit and use-tax account identifiers.
+- [x] Implement CDTFA Online Services as user-assisted authenticated read-only
+      discovery with explicit forbidden actions.
+- [x] Implement MyFTB as user-assisted authenticated read-only discovery with terms
+      that prohibit shared credentials and require authorized business access.
+- [x] Implement CA AG Online Filing Service as optional user-assisted dashboard-only
+      detail supplementing the public Registry Search Tool/detail-page source. It must
+      not be treated as a default compliance-status blocker.
+- [x] Confirm IRS Tax Pro Account remains unregistered unless the source review
+      identifies nonprofit-specific value beyond TEOS/BMF and a safe read-only path.
+
+### Skill docs and progressive disclosure
+
+- [x] Keep `.agents/skills/compliance-discover/SKILL.md` focused on workflow.
+- [x] Update `.agents/skills/compliance-discover/references/california-sources.md`
+      with Phase 3 portal-specific source details.
+- [x] Update `.agents/skills/compliance-discover/references/manual-sources.md` with
+      auth-required handoff guidance.
+- [x] Add a federal reference note explaining why IRS Tax Pro Account is not a
+      default Phase 3 discovery source.
+
+### Manual verification
+
+- [x] Confirm `.env` / `.env.local` provide the GCP project and credential settings
+      needed for compliance commands.
+- [x] Run migrations in the real dev project and confirm idempotency. Verified
+      `created_tables=0`, `skipped_tables=4`, `added_columns=0`, and
+      `updated_views=1` on rerun.
+- [x] Run `compliance-discover` against the currently onboarded nonprofit.
+      Verified Leleka Foundation discovery produced 9 source runs.
+- [x] Confirm Phase 2 public sources still produce live/cache-backed results.
+      Verified `us-federal/irs-teos`, `us-federal/irs-eo-bmf`, and
+      `us-ca/ca-ag-registry` returned `success`.
+- [x] Automate CA SOS bizfile public business-status verification so the skill no
+      longer asks the user to manually search the public bizfile page when the page can be
+      checked by the tool itself.
+- [x] Confirm Phase 3 sources persist `AUTH`, source-failure, and automated public outcomes with detailed
+      evidence instructions and no credential leakage. Verified
+      `ca-cdtfa-permit-license-verification`, `ca-sos-bizfile`, and
+      `ca-ftb-entity-status-letter` return automated public status payloads; verified
+      `ca-cdtfa-online-services` and `ca-ftb-myftb` returned `auth_required`
+      with login URLs, field descriptors, evidence fields, and forbidden actions only.
+      `ca-ag-online-filing` remains an optional dashboard-only source because public
+      CA AG status is fetched from `ca-ag-registry`.
+- [x] Run `compliance-status` and verify stored Phase 3 outcomes are visible without
+      network discovery. Verified latest stored state reports 9 runs with overall
+      status `attention_required`.
+- [x] Record user-provided CDTFA Online Services evidence through
+      `compliance-record-evidence` and rerun `compliance-status` to confirm the CDTFA
+      authenticated source is no longer an open action when the latest stored run is
+      successful.
+
+### Acceptance gates
+
+- [x] `bun typecheck` — zero errors
+- [x] `bun lint` — zero errors, zero warnings
+- [x] `bun test:run` — all tests pass
+- [x] `bun test:coverage` — 100% statements / branches / functions / lines on all
+      new files
+- [x] `bun format:check` — all files formatted
+- [x] `git diff --check` — no whitespace errors
+- [x] No `any` types
+- [x] No `as` casts except the documented JSONB exception
+- [x] No inline ESLint suppression comments unless required by a framework and
+      explained
+- [x] No newly skipped tests. The pre-existing real-BigQuery integration test remains
+      skipped unless explicitly enabled by environment.
+- [x] All external data Zod-validated
+- [x] All CLI parsing via `commander`
+- [x] Production errors via `Result` / `ResultAsync`
+
+### Phase exit
+
+- [x] Mark completed Phase 3 items in this file.
+- [ ] Push branch and open a PR titled
+      `compliance phase 3: authenticated discovery`.
+- [ ] PR description includes source-policy decisions, deliverables,
+      acceptance-gate output, and live verification notes.
+- [ ] Monitor CI and code review until clean; address every finding.
+- [ ] Stop after PR is ready for user review.
 
 ## Phase 4 — Planning + Calendar
 

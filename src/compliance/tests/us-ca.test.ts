@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { usCaJurisdiction } from '../jurisdictions/us-ca/index.ts'
-import { caFtbEntityStatusLetterSource } from '../jurisdictions/us-ca/sources/ca-ftb.ts'
+import { caAgOnlineFilingSource } from '../jurisdictions/us-ca/sources/ca-ag-online-filing.ts'
+import {
+  caCdtfaOnlineServicesSource,
+  caCdtfaPermitLicenseVerificationSource,
+} from '../jurisdictions/us-ca/sources/ca-cdtfa.ts'
+import { caFtbMyFtbSource } from '../jurisdictions/us-ca/sources/ca-ftb-myftb.ts'
 import { caSosBizfileSource } from '../jurisdictions/us-ca/sources/ca-sos.ts'
 import type { Entity, FetchImpl, SourceContext } from '../types/index.ts'
 import { SourceMetadataSchema } from '../types/index.ts'
@@ -33,8 +38,12 @@ describe('usCaJurisdiction', () => {
   it('exports the California jurisdiction with all Phase 2 public sources', () => {
     expect(usCaJurisdiction.id).toBe('us-ca')
     expect(usCaJurisdiction.sources.map((source) => source.id).sort()).toEqual([
+      'ca-ag-online-filing',
       'ca-ag-registry',
+      'ca-cdtfa-online-services',
+      'ca-cdtfa-permit-license-verification',
       'ca-ftb-entity-status-letter',
+      'ca-ftb-myftb',
       'ca-sos-bizfile',
     ])
   })
@@ -46,12 +55,18 @@ describe('usCaJurisdiction', () => {
         agCharityNumber: '000123',
         ftbEntityId: '0123456',
         ftbEntityName: 'Foo Foundation',
+        cdtfaSellerPermitNumber: '102-345678',
+        cdtfaUseTaxAccountNumber: 'UT-00123456',
+        cdtfaSpecialTaxAccountNumber: 'STF-000123',
       }),
     ).toEqual({
       sosEntityNumber: 'B20250000001',
       agCharityNumber: '000123',
       ftbEntityId: '0123456',
       ftbEntityName: 'Foo Foundation',
+      cdtfaSellerPermitNumber: '102-345678',
+      cdtfaUseTaxAccountNumber: 'UT-00123456',
+      cdtfaSpecialTaxAccountNumber: 'STF-000123',
     })
   })
 
@@ -77,41 +92,130 @@ describe('usCaJurisdiction', () => {
     }
   })
 
-  it('models SOS and FTB as manual sources and AG Registry as an official download', () => {
+  it('models public/manual and authenticated California sources distinctly', () => {
     const byId = new Map(
       usCaJurisdiction.sources.map((source) => [source.id, source]),
     )
 
     expect(byId.get('ca-sos-bizfile')).toMatchObject({
-      kind: 'manual',
-      accessMethod: 'manual',
-      automationAllowed: false,
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      automationAllowed: true,
     })
     expect(byId.get('ca-ftb-entity-status-letter')).toMatchObject({
-      kind: 'manual',
-      accessMethod: 'manual',
-      automationAllowed: false,
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      authRequired: false,
+      automationAllowed: true,
+    })
+    expect(byId.get('ca-cdtfa-permit-license-verification')).toMatchObject({
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      authRequired: false,
+      automationAllowed: true,
     })
     expect(byId.get('ca-ag-registry')).toMatchObject({
       kind: 'api',
-      accessMethod: 'official_bulk_download',
+      accessMethod: 'official_public_page',
+      automationAllowed: true,
+    })
+    expect(byId.get('ca-cdtfa-online-services')).toMatchObject({
+      kind: 'playwright',
+      accessMethod: 'playwright_readonly',
+      authRequired: true,
+      automationAllowed: true,
+    })
+    expect(byId.get('ca-ftb-myftb')).toMatchObject({
+      kind: 'playwright',
+      accessMethod: 'playwright_readonly',
+      authRequired: true,
+      automationAllowed: true,
+    })
+    expect(byId.get('ca-ag-online-filing')).toMatchObject({
+      kind: 'playwright',
+      accessMethod: 'playwright_readonly',
+      authRequired: true,
       automationAllowed: true,
     })
   })
 
-  it('keeps SOS and FTB manual source run methods as explicit ToS errors', async () => {
-    const sosResult = await caSosBizfileSource.run(ENTITY, CONTEXT)
-    const ftbResult = await caFtbEntityStatusLetterSource.run(ENTITY, CONTEXT)
+  it('runs SOS through a public browser-backed source instead of a manual ToS placeholder', () => {
+    expect(caSosBizfileSource).toMatchObject({
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      automationAllowed: true,
+      authRequired: false,
+    })
+  })
 
-    expect(sosResult.isErr()).toBe(true)
-    if (sosResult.isErr()) {
-      expect(sosResult.error.type).toBe('tos')
-      expect(sosResult.error.message).toContain('manual-only')
+  it('declares detailed auth requirements for every authenticated portal source', () => {
+    const authSources = [
+      caCdtfaOnlineServicesSource,
+      caFtbMyFtbSource,
+      caAgOnlineFilingSource,
+    ]
+
+    for (const source of authSources) {
+      expect(source.authRequired).toBe(true)
+      expect(source.auth?.loginUrl).toMatch(/^https:\/\//)
+      expect(source.auth?.instructions.length).toBeGreaterThan(0)
+      expect(source.auth?.evidenceFields.length).toBeGreaterThan(0)
+      expect(source.auth?.forbiddenActions.length).toBeGreaterThan(0)
     }
-    expect(ftbResult.isErr()).toBe(true)
-    if (ftbResult.isErr()) {
-      expect(ftbResult.error.type).toBe('tos')
-      expect(ftbResult.error.message).toContain('manual-only')
+  })
+
+  it('points CA AG authenticated review at the direct Online Renewal System login', () => {
+    expect(caAgOnlineFilingSource.description).toContain(
+      'Online Renewal System',
+    )
+    expect(caAgOnlineFilingSource.accessUrl).toBe(
+      'https://rct.doj.ca.gov/eGov/Home.aspx',
+    )
+    expect(caAgOnlineFilingSource.auth?.loginUrl).toBe(
+      'https://rct.doj.ca.gov/eGov/Home.aspx',
+    )
+    expect(caAgOnlineFilingSource.auth?.instructions.join(' ')).toContain(
+      'optional dashboard-only details',
+    )
+    expect(caAgOnlineFilingSource.auth?.instructions.join(' ')).toContain(
+      'https://rct.doj.ca.gov/Verification/Web/Search.aspx?facility=Y',
+    )
+  })
+
+  it('keeps authenticated portal source run methods as explicit auth ToS errors', async () => {
+    const sources = [
+      caCdtfaOnlineServicesSource,
+      caFtbMyFtbSource,
+      caAgOnlineFilingSource,
+    ]
+
+    for (const source of sources) {
+      const result = await source.run(ENTITY, CONTEXT)
+
+      expect(result.isErr()).toBe(true)
+      if (!result.isErr()) return
+      expect(result.error.type).toBe('tos')
+      expect(result.error.message).toContain('authenticated session')
     }
+  })
+
+  it('runs CDTFA permit verification through a public browser-backed source', async () => {
+    expect(caCdtfaPermitLicenseVerificationSource).toMatchObject({
+      id: 'ca-cdtfa-permit-license-verification',
+      kind: 'playwright',
+      accessMethod: 'official_public_page',
+      automationAllowed: true,
+      authRequired: false,
+    })
+
+    const result = await caCdtfaPermitLicenseVerificationSource.run(
+      ENTITY,
+      CONTEXT,
+    )
+
+    expect(result.isErr()).toBe(true)
+    if (!result.isErr()) return
+    expect(result.error.type).toBe('validation')
+    expect(result.error.message).toContain('seller permit')
   })
 })
