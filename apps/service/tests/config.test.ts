@@ -67,27 +67,27 @@ describe('ConfigSchema', () => {
   })
 
   it('rejects missing PROJECT_ID', () => {
-    const { PROJECT_ID: _, ...rest } = validEnv
-
-    expect(() => ConfigSchema.parse(rest)).toThrow()
+    expect(() =>
+      ConfigSchema.parse({ ...validEnv, PROJECT_ID: undefined }),
+    ).toThrow()
   })
 
   it('rejects missing SERVICE_API_KEY', () => {
-    const { SERVICE_API_KEY: _, ...rest } = validEnv
-
-    expect(() => ConfigSchema.parse(rest)).toThrow()
+    expect(() =>
+      ConfigSchema.parse({ ...validEnv, SERVICE_API_KEY: undefined }),
+    ).toThrow()
   })
 
   it('rejects missing SLACK_BOT_TOKEN', () => {
-    const { SLACK_BOT_TOKEN: _, ...rest } = validEnv
-
-    expect(() => ConfigSchema.parse(rest)).toThrow()
+    expect(() =>
+      ConfigSchema.parse({ ...validEnv, SLACK_BOT_TOKEN: undefined }),
+    ).toThrow()
   })
 
   it('rejects missing SLACK_SIGNING_SECRET', () => {
-    const { SLACK_SIGNING_SECRET: _, ...rest } = validEnv
-
-    expect(() => ConfigSchema.parse(rest)).toThrow()
+    expect(() =>
+      ConfigSchema.parse({ ...validEnv, SLACK_SIGNING_SECRET: undefined }),
+    ).toThrow()
   })
 
   it('rejects invalid LOG_LEVEL', () => {
